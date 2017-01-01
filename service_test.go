@@ -50,3 +50,8 @@ func Test_Service_02(t *testing.T) {
 		t.Error("Failed. Should have expired\n")
 	}
 }
+
+func init(t *testing.T) {
+	t.Log("Make sure you have consul server running.")
+	t.Log("e.g. docker run -d -p 8500:8500 consul")
+}
