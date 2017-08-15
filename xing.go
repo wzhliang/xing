@@ -116,6 +116,12 @@ func (c *Client) register() error {
 	return c.send(c.name, Event, Register, c.serializer.DefaultValue())
 }
 
+func (c *Client) toResult(d *amqp.Delivery) (typ string, v interface{}, err error) {
+	typ = c.userType(d.RoutingKey)
+	v, err = c.serializer.Unmarshal(typ, d.Body)
+	return
+}
+
 func (c *Client) _send(ex string, key string, corrid string, userType string, payload interface{}) error {
 	pl, err := c.serializer.Marshal(userType, payload)
 	if err != nil {
@@ -177,31 +183,31 @@ func (c *Client) newChannel() error {
 }
 
 // Call ...
-func (c *Client) Call(target string, method string, payload interface{}) error {
+func (c *Client) Call(target string, method string, payload interface{}) (string, interface{}, error) {
 	err := c.newChannel() // FIXME: ugly hack, should try to resuse the channel
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	msgs, err := c.ch.Consume(c.resultQueue.Name, "", false, false, false, false, nil)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	err = c.ch.Qos(1, 0, false)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	err = c.send(target, Command, method, payload)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	for m := range msgs {
 		if c.corrid() == m.CorrelationId {
 			m.Ack(false)
-			break
+			return c.toResult(&m)
 		}
 	}
 
-	return nil
+	return "", nil, err
 }
 
 // RunTask called by producer to start a task
@@ -218,22 +224,22 @@ func (c *Client) RunTask(target string, method string, payload interface{}) (str
 }
 
 // WaitForTask ...
-func (c *Client) WaitForTask(taskID string) (*amqp.Delivery, error) {
+func (c *Client) WaitForTask(taskID string) (string, interface{}, error) {
 	err := c.newChannel() // FIXME: ugly hack
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	msgs, err := c.ch.Consume(c.resultQueue.Name, "", false, false, false, false, nil)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	for m := range msgs {
 		if taskID == m.CorrelationId {
 			m.Ack(false)
-			return &m, nil
+			return c.toResult(&m)
 		}
 	}
-	return nil, fmt.Errorf("wtf?")
+	return "", nil, fmt.Errorf("wtf?")
 }
 
 // Respond called by RPC server or task runner
@@ -408,7 +414,6 @@ func (c *Client) Loop(handler MessageHandler) error {
 			log.Errorf("Unable to unmarshal message: d.Body")
 			continue
 		}
-		log.Printf("Received a message: %s from %s", m, d.ReplyTo)
 		handler(c.userType(d.RoutingKey), m, d)
 		d.Ack(false)
 	}

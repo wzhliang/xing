@@ -27,8 +27,8 @@ func main() {
 	_assert(err)
 	fmt.Printf("Waiting for result...\n")
 	for _, t := range []string{id3, id2, id1} {
-		result, err := producer.WaitForTask(t)
+		typ, result, err := producer.WaitForTask(t)
 		_assert(err)
-		fmt.Printf("  result: %s\n", result.Body)
+		fmt.Printf("  result: %s\n", result)
 	}
 }

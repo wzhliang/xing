@@ -18,7 +18,7 @@ func main() {
 	producer, err := xing.NewProducer("confcenter.agent", url,
 		xing.SetIdentifier(&xing.NodeIdentifier{}))
 	_assert(err)
-	err = producer.Call("confcenter.apiserver", "restart_pod", os.Args[1])
+	_, _, err = producer.Call("confcenter.apiserver", "restart_pod", os.Args[1])
 	_assert(err)
 	// err = producer.Call("confcenter.apiserver", "foo", os.Args[1])
 	// _assert(err)
