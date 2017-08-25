@@ -44,7 +44,7 @@ func (u *MyUser) DefaultValue() interface{} {
 
 func main() {
 	url := "amqp://guest:guest@localhost:5672/"
-	producer, err := xing.NewProducer("orchestration.controller", url,
+	producer, err := xing.NewClient("orchestration.controller", url,
 		xing.SetIdentifier(&xing.NodeIdentifier{}),
 		xing.SetSerializer(&MyUser{}))
 	_assert(err)

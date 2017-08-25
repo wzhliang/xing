@@ -14,7 +14,7 @@ func _assert(err error) {
 }
 
 func main() {
-	producer, err := xing.NewProducer("ingress.controller", "amqp://guest:guest@localhost:5672/",
+	producer, err := xing.NewClient("ingress.controller", "amqp://guest:guest@localhost:5672/",
 		xing.SetIdentifier(&xing.NodeIdentifier{}))
 	_assert(err)
 	err = producer.NotifyAll("new_ingress_rule", os.Args[1])

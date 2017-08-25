@@ -1,6 +1,10 @@
 package xing
 
-import "os"
+import (
+	"os"
+
+	uuid "github.com/satori/go.uuid"
+)
 
 // Identifier ...
 type Identifier interface {
@@ -32,4 +36,13 @@ type NodeIdentifier struct {
 // InstanceID ...
 func (p *NodeIdentifier) InstanceID() string {
 	return os.Getenv("MY_NODE_ID")
+}
+
+// RandomIdentifier ...
+type RandomIdentifier struct {
+}
+
+// InstanceID ...
+func (p *RandomIdentifier) InstanceID() string {
+	return uuid.NewV4().String()[:6]
 }

@@ -2,25 +2,26 @@ package xing
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
+	"golang.org/x/net/context"
 )
 
 // Rules:
 // Routing key format:
 //     domain.name.instance.type.xxx
+// For RPC result it'll be
+//     domain.name.instance.result.command
 
 // TODO:
 // - check usage of autoAck
 // - turn on exclusive for all?
 // - hide AMQP deatils like amqp.Delivery from interface
-
-// MessageHandler ...
-type MessageHandler func(typ string, v interface{}, ctx amqp.Delivery)
 
 // ClientOpt ...
 type ClientOpt func(*Client)
@@ -36,6 +37,7 @@ func SetSerializer(ser Serializer) ClientOpt {
 func SetIdentifier(id Identifier) ClientOpt {
 	return func(c *Client) {
 		c.identifier = id
+		c.setID(id.InstanceID())
 	}
 }
 
@@ -67,6 +69,10 @@ type Client struct {
 	rpcCounter   uint
 	interests    []string
 	typ          string
+	handlers     map[string]reflect.Value
+	inputs       map[string]reflect.Type
+	outputs      map[string]reflect.Type
+	svc          interface{}
 	// TODO: protect against race condition?
 }
 
@@ -83,16 +89,22 @@ func (c *Client) domain() string {
 	return strings.Split(c.name, ".")[0]
 }
 
-func (c *Client) topicLength(name string) int {
-	return len(strings.Split(name, "."))
-}
-
 func (c *Client) service() string {
 	return strings.Join(strings.Split(c.name, ".")[0:2], ".")
 }
 
+func (c *Client) setID(id string) {
+	arr := strings.Split(c.name, ".")
+	arr[2] = id
+	c.name = strings.Join(arr, ".")
+}
+
 func (c *Client) userType(topic string) string {
-	return strings.Split(topic, ".")[3]
+	return strings.Split(topic, ".")[4]
+}
+
+func (c *Client) respTo(topic string) string {
+	return strings.Split(topic, ".")[4]
 }
 
 func (c *Client) instance() string {
@@ -111,19 +123,25 @@ func (c *Client) isConsumer() bool {
 	return c.typ == Service || c.typ == TaskRunner || c.typ == EventHandler
 }
 
-// should only be called by task runners
+func (c *Client) isService() bool {
+	return c.typ == Service
+}
+
+// should only be called by individual service (non balanced)
 func (c *Client) register() error {
 	return c.send(c.name, Event, Register, c.serializer.DefaultValue())
 }
 
 func (c *Client) toResult(d *amqp.Delivery) (typ string, v interface{}, err error) {
-	typ = c.userType(d.RoutingKey)
-	v, err = c.serializer.Unmarshal(typ, d.Body)
+	typ = c.respTo(d.RoutingKey)
+	log.Infof("response to: %s -> %v", typ, c.outputs[typ])
+	v = reflect.New(c.outputs[typ]).Interface()
+	err = c.serializer.Unmarshal(d.Body, v)
 	return
 }
 
 func (c *Client) _send(ex string, key string, corrid string, userType string, payload interface{}) error {
-	pl, err := c.serializer.Marshal(userType, payload)
+	pl, err := c.serializer.Marshal(payload)
 	if err != nil {
 		return err
 	}
@@ -155,20 +173,19 @@ func (c *Client) send(target string, _type string, event string, payload interfa
 	}
 
 	ex := c.exchange(_type)
-	if target == "" {
-		target = c.domain() + "." + "x" + "." + "x"
+	var key string
+	if topicLength(target) == 2 { // load balanced rpc
+		key = fmt.Sprintf("%s.*.%s.%s", target, _type, event)
+	} else if topicLength(target) == 3 {
+		key = fmt.Sprintf("%s.%s.%s", target, _type, event)
+	} else {
+		return fmt.Errorf("Invalid target. %s", target)
 	}
-	key := fmt.Sprintf("%s.%s.%s", target, _type, event)
 	return c._send(ex, key, cor, event, payload)
 }
 
-// NotifyAll ...
-func (c *Client) NotifyAll(event string, payload interface{}) error {
-	return c.send("", Event, event, payload)
-}
-
-// NotifySome ...
-func (c *Client) NotifySome(target string, event string, payload interface{}) error {
+// Notify ...
+func (c *Client) Notify(target string, event string, payload interface{}) error {
 	return c.send(target, Event, event, payload)
 }
 
@@ -183,27 +200,33 @@ func (c *Client) newChannel() error {
 }
 
 // Call ...
-func (c *Client) Call(target string, method string, payload interface{}) (string, interface{}, error) {
-	err := c.newChannel() // FIXME: ugly hack, should try to resuse the channel
-	if err != nil {
-		return "", nil, err
-	}
-	msgs, err := c.ch.Consume(c.resultQueue.Name, "", false, false, false, false, nil)
-	if err != nil {
-		return "", nil, err
-	}
-	err = c.ch.Qos(1, 0, false)
-	if err != nil {
-		return "", nil, err
+func (c *Client) Call(target string, method string, payload interface{}, sync bool) (string, interface{}, error) {
+	var err error
+	var msgs <-chan amqp.Delivery
+	if sync {
+		err = c.newChannel() // FIXME: ugly hack, should try to resuse the channel
+		if err != nil {
+			return "", nil, err
+		}
+		msgs, err = c.ch.Consume(c.resultQueue.Name, "", false, false, false, false, nil)
+		if err != nil {
+			return "", nil, err
+		}
+		err = c.ch.Qos(1, 0, false)
+		if err != nil {
+			return "", nil, err
+		}
 	}
 	err = c.send(target, Command, method, payload)
 	if err != nil {
 		return "", nil, err
 	}
-	for m := range msgs {
-		if c.corrid() == m.CorrelationId {
-			m.Ack(false)
-			return c.toResult(&m)
+	if sync {
+		for m := range msgs {
+			if c.corrid() == m.CorrelationId {
+				m.Ack(false)
+				return c.toResult(&m)
+			}
 		}
 	}
 
@@ -212,7 +235,7 @@ func (c *Client) Call(target string, method string, payload interface{}) (string
 
 // RunTask called by producer to start a task
 func (c *Client) RunTask(target string, method string, payload interface{}) (string, error) {
-	if c.topicLength(target) != 3 {
+	if topicLength(target) != 3 {
 		return "", fmt.Errorf("invalid target: %s", target)
 	}
 	err := c.send(target, Task, method, payload)
@@ -243,30 +266,32 @@ func (c *Client) WaitForTask(taskID string) (string, interface{}, error) {
 }
 
 // Respond called by RPC server or task runner
-func (c *Client) Respond(delivery amqp.Delivery, respType string, payload interface{}) error {
-	key := fmt.Sprintf("%s.%s.x", delivery.ReplyTo, Result)
-	return c._send(delivery.Exchange, key, delivery.CorrelationId, respType, payload)
+func (c *Client) Respond(delivery amqp.Delivery, command string, payload interface{}) error {
+	key := fmt.Sprintf("%s.%s.%s", delivery.ReplyTo, Result, command)
+	return c._send(delivery.Exchange, key, delivery.CorrelationId, command, payload)
 }
 
 // Close ...
 func (c *Client) Close() {
+	// FIXME: should probably clean up stuff
 	c.conn.Close()
 }
 
 func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 	c := &Client{
-		name:       fmt.Sprintf("%s.%s", name, (&NoneIdentifier{}).InstanceID()),
+		name:       fmt.Sprintf("%s.%s", name, (&RandomIdentifier{}).InstanceID()),
 		url:        url,
-		serializer: &PlainSerializer{},
-		identifier: &PodIdentifier{},
-	}
-	if c.topicLength(name) == 3 { // FIXME: maybe we shouldn't allow this
-		c.name = name // Allow client to specify it's own name
+		serializer: &ProtoSerializer{},
+		identifier: &RandomIdentifier{},
 	}
 	// default to events from own domain
 	c.interests = []string{fmt.Sprintf("%s.#", c.domain())}
+	// handle options
 	for _, o := range opts {
 		o(c)
+	}
+	if topicLength(name) == 3 {
+		c.name = name // Allow client to specify it's own name
 	}
 	conn, err := amqp.Dial(url)
 	if err != nil {
@@ -280,7 +305,7 @@ func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 	}
 	c.ch = ch
 
-	err = ch.ExchangeDeclare(EventExchange, "fanout", true, true, false, false, nil)
+	err = ch.ExchangeDeclare(EventExchange, "topic", true, true, false, false, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -298,8 +323,8 @@ func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 	return c, nil
 }
 
-// NewProducer ...
-func NewProducer(name string, url string, opts ...ClientOpt) (*Client, error) {
+// NewClient ...
+func NewClient(name string, url string, opts ...ClientOpt) (*Client, error) {
 	c, err := bootStrap(name, url, opts...)
 	if err != nil {
 		return nil, err
@@ -310,12 +335,12 @@ func NewProducer(name string, url string, opts ...ClientOpt) (*Client, error) {
 		return nil, err
 	}
 	key := fmt.Sprintf("%s.#", resultTopicName(c.name))
-	log.Printf("Subscribing to %s on %s", key, RPCExchange)
+	log.Printf("Subscribing (%s <-> %s) on %s", c.resultQueue.Name, RPCExchange, key)
 	err = c.ch.QueueBind(c.resultQueue.Name, key, RPCExchange, false, nil)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("Subscribing to %s on %s", key, TaskExchange)
+	log.Printf("Subscribing (%s <-> %s) on %s", c.resultQueue.Name, TaskExchange, key)
 	err = c.ch.QueueBind(c.resultQueue.Name, key, TaskExchange, false, nil)
 	if err != nil {
 		return nil, err
@@ -331,14 +356,21 @@ func NewService(name string, url string, opts ...ClientOpt) (*Client, error) {
 	}
 	c.typ = Service
 	// Same queue for all services - load balancing
-	svc := fmt.Sprintf("svc-%s", c.service())
+	if topicLength(name) != 2 && topicLength(name) != 3 {
+		return nil, fmt.Errorf("Invalid name for service: %s", name)
+	}
+	svc := fmt.Sprintf("svc-%s", name)
 	c.serviceQueue, err = c.ch.QueueDeclare(svc, false, false, false, false, nil)
 	if err != nil {
 		return nil, err
 	}
-	key := fmt.Sprintf("%s.#", c.service())
-	log.Printf("Subscribing to %s in %s", key, RPCExchange)
+	key := fmt.Sprintf("%s.#", name)
+	log.Printf("Subscribing (%s <-> %s) on %s", svc, RPCExchange, key)
 	err = c.ch.QueueBind(svc, key, RPCExchange, false, nil)
+	if err != nil {
+		return nil, err
+	}
+	err = c.register()
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +384,7 @@ func NewTaskRunner(name string, url string, opts ...ClientOpt) (*Client, error) 
 		return nil, err
 	}
 	c.typ = TaskRunner
-	if c.topicLength(name) != 3 {
+	if topicLength(name) != 3 {
 		return nil, fmt.Errorf("invalid name for task runner: %s", name)
 	}
 	svc := fmt.Sprintf("tkr-%s", c.name)
@@ -361,7 +393,7 @@ func NewTaskRunner(name string, url string, opts ...ClientOpt) (*Client, error) 
 		return nil, err
 	}
 	key := fmt.Sprintf("%s.%s.*", c.name, Task)
-	log.Printf("Subscribing to %s in %s", key, TaskExchange)
+	log.Printf("Subscribing (%s <-> %s) on %s", svc, TaskExchange, key)
 	err = c.ch.QueueBind(svc, key, TaskExchange, false, nil)
 	if err != nil {
 		return nil, err
@@ -386,17 +418,30 @@ func NewEventHandler(name string, url string, opts ...ClientOpt) (*Client, error
 		return nil, err
 	}
 	for _, key := range c.interests {
-		log.Printf("Subscribing to %s in %s", key, EventExchange)
+		log.Printf("Subscribing (%s <-> %s) on %s", c.queue.Name, EventExchange, key)
 		err = c.ch.QueueBind(c.queue.Name, key, EventExchange, false, nil)
 		if err != nil {
 			return nil, err
 		}
 	}
+	err = c.register()
+	if err != nil {
+		return nil, err
+	}
 	return c, err
 }
 
-// Loop Only valid for consumers
-func (c *Client) Loop(handler MessageHandler) error {
+// NewHandler ...
+func (c *Client) NewHandler(v interface{}) {
+	c.svc = v // save the handler object
+	c.handlers, c.inputs, c.outputs = Methods(v)
+	for name := range c.handlers {
+		log.Infof("+++ %s", c.handlers[name])
+	}
+}
+
+// Run Only valid for service or event handler
+func (c *Client) Run() error {
 	if !c.isConsumer() {
 		panic("only consumer can start a server")
 	}
@@ -408,15 +453,46 @@ func (c *Client) Loop(handler MessageHandler) error {
 	}
 
 	for d := range msgs {
-		ser := c.serializer
-		m, err := ser.Unmarshal(c.userType(d.RoutingKey), d.Body)
-		if err != nil {
-			log.Errorf("Unable to unmarshal message: d.Body")
+		utype := c.userType(d.RoutingKey)
+		if c.inputs[utype] == nil {
+			log.Infof("Unknown method: %s", utype)
 			continue
 		}
-		handler(c.userType(d.RoutingKey), m, d)
+		log.Infof("method: %s", utype)
+		m := reflect.New(c.inputs[utype])
+		err := c.serializer.Unmarshal(d.Body, m.Interface())
+		if err != nil {
+			log.Errorf("Unable to unmarshal message: %s", d.Body)
+			log.Info(err)
+			continue
+		}
+		// I know the signature
+		resp := reflect.New(c.outputs[utype])
+		params := make([]reflect.Value, 0)
+		params = append(params, reflect.ValueOf(c.svc)) // this pointer
+		params = append(params, reflect.ValueOf(context.Background()))
+		params = append(params, m)
+		params = append(params, resp)
+		ret := c.handlers[utype].Call(params)
+		if !ret[0].IsNil() {
+			log.Errorf("RPC [%s] failed: %v", utype, ret[0])
+			// FIXME: return error
+		}
+		if !c.isService() || c.outputs[utype].Name() == "Void" { // magic Void
+			log.Info("No response required.")
+		} else {
+			err = c.Respond(d, utype, resp.Interface())
+			if err != nil {
+				log.Errorf("Unable to send response: %v", err)
+				return err
+			}
+		}
 		d.Ack(false)
 	}
 
 	return nil
+}
+
+func topicLength(name string) int {
+	return len(strings.Split(name, "."))
 }

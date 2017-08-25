@@ -5,18 +5,15 @@ import (
 	"testing"
 )
 
-func _assert(cond bool, t *testing.T) {
-	if !cond {
-		t.Error("wtf")
-
-	}
-}
-
 func Test_00(t *testing.T) {
-	s := PlainSerializer{}
-	_assert(s.ContentType() == "text/plain", t)
+	T := func(cond bool, msg string) {
+		_assert(t, cond, msg)
+	}
 
-	data, err := s.Marshal("N/A", "hello")
-	_assert(err == nil, t)
-	_assert(0 == bytes.Compare(data, []byte("hello")), t)
+	s := PlainSerializer{}
+	T(s.ContentType() == "text/plain", "...")
+
+	data, err := s.Marshal("hello")
+	T(err == nil, "...")
+	T(0 == bytes.Compare(data, []byte("hello")), "...")
 }

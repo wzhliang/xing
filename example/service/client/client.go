@@ -15,7 +15,7 @@ func _assert(err error) {
 
 func main() {
 	url := "amqp://guest:guest@localhost:5672/"
-	producer, err := xing.NewProducer("confcenter.agent", url,
+	producer, err := xing.NewClient("confcenter.agent", url,
 		xing.SetIdentifier(&xing.NodeIdentifier{}))
 	_assert(err)
 	_, _, err = producer.Call("confcenter.apiserver", "restart_pod", os.Args[1])
