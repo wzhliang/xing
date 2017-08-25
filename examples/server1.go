@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"golang.org/x/net/context"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/wzhliang/xing"
 )
 
-func _assert(err error) {
+func err_assert(err error) {
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -29,11 +30,12 @@ func (g *Greeter) Nihao(ctx context.Context, req *hello.HelloRequest, v *hello.V
 }
 
 func main() {
-	svc, err := xing.NewService("host.server",
+	name := fmt.Sprintf("host.agent.%s", os.Args[1])
+	svc, err := xing.NewService(name,
 		"amqp://guest:guest@localhost:5672/",
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
-	_assert(err)
+	err_assert(err)
 
 	forever := make(chan bool)
 

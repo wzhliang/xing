@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	hello "./hello"
 	log "github.com/sirupsen/logrus"
@@ -20,7 +21,8 @@ func main() {
 		xing.SetIdentifier(&xing.NodeIdentifier{}),
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
-	cli := hello.NewGreeterClient("host.server", producer)
+	name := fmt.Sprintf("host.agent.%s", os.Args[1])
+	cli := hello.NewGreeterClient(name, producer)
 	ret, err := cli.Hello(nil, &hello.HelloRequest{
 		Name: "鸠摩智",
 	})
