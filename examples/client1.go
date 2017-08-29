@@ -18,7 +18,7 @@ func _assert(err error) {
 func main() {
 	url := "amqp://guest:guest@localhost:5672/"
 	producer, err := xing.NewClient("orchestration.controller", url,
-		xing.SetIdentifier(&xing.NodeIdentifier{}),
+		xing.SetIdentifier(&xing.NoneIdentifier{}),
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
 	name := fmt.Sprintf("host.agent.%s", os.Args[1])

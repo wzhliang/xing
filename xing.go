@@ -51,7 +51,8 @@ func SetInterets(topic ...string) ClientOpt {
 }
 
 func resultTopicName(who string) string {
-	return fmt.Sprintf("%s.result", who)
+	// who has to have 3 segments
+	return fmt.Sprintf("%s.result.*", who)
 }
 
 // Client ...
@@ -335,7 +336,7 @@ func NewClient(name string, url string, opts ...ClientOpt) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	key := fmt.Sprintf("%s.#", resultTopicName(c.name))
+	key := resultTopicName(c.name)
 	log.Printf("Subscribing (%s <-> %s) on %s", c.resultQueue.Name, RPCExchange, key)
 	err = c.ch.QueueBind(c.resultQueue.Name, key, RPCExchange, false, nil)
 	if err != nil {
