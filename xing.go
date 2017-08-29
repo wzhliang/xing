@@ -162,7 +162,9 @@ func (c *Client) _send(ex string, key string, corrid string, userType string, pa
 func (c *Client) send(target string, _type string, event string, payload interface{}) error {
 	var cor string
 	if _type == Command {
+		c.m.Lock()
 		c.rpcCounter++
+		c.m.Unlock()
 		log.Printf("rpcCounter: %d", c.rpcCounter)
 		cor = c.corrid()
 	} else if _type == Task {
@@ -192,7 +194,9 @@ func (c *Client) Notify(target string, event string, payload interface{}) error 
 
 func (c *Client) newChannel() error {
 	c.ch.Close()
+	c.m.Lock()
 	ch, err := c.conn.Channel()
+	c.m.Unlock()
 	if err != nil {
 		return err
 	}
