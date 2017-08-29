@@ -209,10 +209,6 @@ func (c *Client) Call(target string, method string, payload interface{}, sync bo
 	var err error
 	var msgs <-chan amqp.Delivery
 	if sync {
-		err = c.newChannel() // FIXME: ugly hack, should try to resuse the channel
-		if err != nil {
-			return "", nil, err
-		}
 		msgs, err = c.ch.Consume(c.resultQueue.Name, "", false, false, false, false, nil)
 		if err != nil {
 			return "", nil, err
