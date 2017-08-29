@@ -1,4 +1,6 @@
 # 准备
+0. 下载安装protoc:
+    * [https://github.com/google/protobuf/releases](https://github.com/google/protobuf/releases)
 0. `go get github.com/google/protobuf`
 0. `go get github.com/wzhliang/protobuf`
 0. `cd $GOPATH/src/github.com/wzhliang/protobuf && make`
