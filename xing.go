@@ -330,7 +330,8 @@ func NewClient(name string, url string, opts ...ClientOpt) (*Client, error) {
 		return nil, err
 	}
 	c.typ = Producer
-	c.resultQueue, err = c.ch.QueueDeclare("", false, false, false, false, nil)
+	qn := fmt.Sprintf("xing.C.%s.result", name)
+	c.resultQueue, err = c.ch.QueueDeclare(qn, false, false, false, false, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +360,7 @@ func NewService(name string, url string, opts ...ClientOpt) (*Client, error) {
 	if topicLength(name) != 2 && topicLength(name) != 3 {
 		return nil, fmt.Errorf("Invalid name for service: %s", name)
 	}
-	svc := fmt.Sprintf("svc-%s", name)
+	svc := fmt.Sprintf("xing.S.svc-%s", name)
 	c.serviceQueue, err = c.ch.QueueDeclare(svc, false, false, false, false, nil)
 	if err != nil {
 		return nil, err
@@ -412,7 +413,7 @@ func NewEventHandler(name string, url string, opts ...ClientOpt) (*Client, error
 		return nil, err
 	}
 	c.typ = EventHandler
-	n := fmt.Sprintf("evh-%s", c.name)
+	n := fmt.Sprintf("xing.S.evh-%s", c.name)
 	c.queue, err = c.ch.QueueDeclare(n, false, false, false, false, nil)
 	if err != nil {
 		return nil, err

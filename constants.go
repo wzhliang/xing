@@ -12,9 +12,9 @@ const (
 	Register = "Register"
 
 	// Exchanges
-	RPCExchange   = "rpc"
-	TaskExchange  = "tasks"
-	EventExchange = "event"
+	RPCExchange   = "xing.rpc"
+	TaskExchange  = "xing.tasks"
+	EventExchange = "xing.event"
 
 	// Client Types
 	Producer     = "producer"
