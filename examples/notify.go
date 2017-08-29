@@ -1,9 +1,9 @@
 package main
 
 import (
-	hello "./hello"
 	log "github.com/sirupsen/logrus"
 	"github.com/wzhliang/xing"
+	"github.com/wzhliang/xing/examples/hello"
 )
 
 func _assert(err error) {
