@@ -8,7 +8,7 @@ import (
 
 func _assert(err error) {
 	if err != nil {
-		log.Errorf(err)
+		log.Errorf("Client: %v", err)
 	}
 }
 
