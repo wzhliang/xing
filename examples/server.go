@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"golang.org/x/net/context"
+	"context"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/wzhliang/xing"
@@ -20,6 +20,7 @@ type Greeter struct{}
 
 func (g *Greeter) Hello(ctx context.Context, req *hello.HelloRequest, rsp *hello.HelloResponse) error {
 	fmt.Printf(" [*] name: %s\n", req.Name)
+	(*rsp).Greeting = "yo"
 	return nil
 }
 

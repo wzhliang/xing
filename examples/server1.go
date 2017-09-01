@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"golang.org/x/net/context"
+	"context"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/wzhliang/xing"

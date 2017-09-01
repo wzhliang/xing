@@ -20,7 +20,7 @@ import math "math"
 
 import (
 	client "github.com/wzhliang/xing"
-	context "golang.org/x/net/context"
+	context "context"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -108,13 +108,16 @@ func NewGreeterClient(serviceName string, c *client.Client) GreeterClient {
 }
 
 func (c *greeterClient) Hello(ctx context.Context, in *HelloRequest, opts ...client.CallOption) (*HelloResponse, error) {
-	_, out, err := c.c.Call(c.serviceName, "Hello", in, true)
+	_, out, err := c.c.Call(ctx, c.serviceName, "Hello", in, true)
+	if out == nil {
+		return nil, err
+	}
 	v := out.(*HelloResponse)
 	return v, err
 }
 
 func (c *greeterClient) Nihao(ctx context.Context, in *HelloRequest, opts ...client.CallOption) (*Void, error) {
-	_, _, err := c.c.Call(c.serviceName, "Nihao", in, false)
+	_, _, err := c.c.Call(ctx, c.serviceName, "Nihao", in, false)
 	return nil, err
 }
 

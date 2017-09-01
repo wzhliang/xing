@@ -1,6 +1,7 @@
 package xing
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -9,7 +10,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
-	"golang.org/x/net/context"
 )
 
 // Rules:
@@ -205,33 +205,54 @@ func (c *Client) newChannel() error {
 }
 
 // Call ...
-func (c *Client) Call(target string, method string, payload interface{}, sync bool) (string, interface{}, error) {
-	var err error
-	var msgs <-chan amqp.Delivery
-	if sync {
-		msgs, err = c.ch.Consume(c.resultQueue.Name, "", false, false, false, false, nil)
-		if err != nil {
-			return "", nil, err
-		}
-		err = c.ch.Qos(1, 0, false)
-		if err != nil {
-			return "", nil, err
-		}
-	}
-	err = c.send(target, Command, method, payload)
-	if err != nil {
-		return "", nil, err
-	}
-	if sync {
-		for m := range msgs {
-			if c.corrid() == m.CorrelationId {
-				m.Ack(false)
-				return c.toResult(&m)
+func (c *Client) Call(ctx context.Context, target string, method string, payload interface{}, sync bool) (string, interface{}, error) {
+	errCh := make(chan error, 1)
+	msgCh := make(chan amqp.Delivery, 1)
+	go func() {
+		var err error
+		var msgs <-chan amqp.Delivery
+		if sync {
+			msgs, err = c.ch.Consume(c.resultQueue.Name, "", false, false, false, false, nil)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			err = c.ch.Qos(1, 0, false)
+			if err != nil {
+				errCh <- err
+				return
 			}
 		}
+		err = c.send(target, Command, method, payload)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		if sync {
+			for m := range msgs {
+				if c.corrid() == m.CorrelationId {
+					m.Ack(false)
+					msgCh <- m
+					return
+				}
+			}
+		}
+	}()
+
+	if !sync {
+		return "", nil, nil
 	}
 
-	return "", nil, err
+	select {
+	case msg := <-msgCh:
+		return c.toResult(&msg)
+	case err := <-errCh:
+		log.Errorf("operation %s failed: %v", method, err)
+		return "", nil, err
+	case <-ctx.Done():
+		err := fmt.Errorf("RPC timeout: %s", method)
+		return "", nil, err
+	}
 }
 
 // RunTask called by producer to start a task

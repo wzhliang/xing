@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"golang.org/x/net/context"
+	"context"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/wzhliang/xing"
