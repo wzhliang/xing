@@ -70,11 +70,10 @@ type Client struct {
 	rpcCounter   uint
 	interests    []string
 	typ          string
-	handlers     map[string]reflect.Value
+	handlers     map[string]reflect.Value // key is service::command
 	inputs       map[string]reflect.Type
 	outputs      map[string]reflect.Type
-	svc          interface{}
-	// TODO: protect against race condition?
+	svc          map[string]interface{} // key is only service
 }
 
 func (c *Client) exchange(typ string) string {
@@ -311,6 +310,7 @@ func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 		url:        url,
 		serializer: &ProtoSerializer{},
 		identifier: &RandomIdentifier{},
+		svc:        make(map[string]interface{}),
 	}
 	// default to events from own domain
 	c.interests = []string{fmt.Sprintf("%s.#", c.domain())}
@@ -461,9 +461,11 @@ func NewEventHandler(name string, url string, opts ...ClientOpt) (*Client, error
 }
 
 // NewHandler ...
-func (c *Client) NewHandler(v interface{}) {
-	c.svc = v // save the handler object
-	c.handlers, c.inputs, c.outputs = Methods(v)
+func (c *Client) NewHandler(service string, v interface{}) {
+	c.m.Lock()
+	defer c.m.Unlock()
+	c.svc[service] = v // save the handler object
+	c.handlers, c.inputs, c.outputs = Methods(service, v)
 	for name := range c.handlers {
 		log.Infof("+++ %s", c.handlers[name])
 	}
@@ -498,7 +500,7 @@ func (c *Client) Run() error {
 		// I know the signature
 		resp := reflect.New(c.outputs[utype])
 		params := make([]reflect.Value, 0)
-		params = append(params, reflect.ValueOf(c.svc)) // this pointer
+		params = append(params, reflect.ValueOf(c.svc[getService(utype)])) // this pointer
 		params = append(params, reflect.ValueOf(context.Background()))
 		params = append(params, m)
 		params = append(params, resp)

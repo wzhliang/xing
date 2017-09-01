@@ -2,8 +2,11 @@ package xing
 
 import "reflect"
 
-func Methods(v interface{}) (map[string]reflect.Value,
-	map[string]reflect.Type, map[string]reflect.Type) {
+// Methods ...
+func Methods(service string, v interface{}) (map[string]reflect.Value, map[string]reflect.Type, map[string]reflect.Type) {
+	name := func(n string) string {
+		return fullName(service, n)
+	}
 	calls := make(map[string]reflect.Value)
 	in := make(map[string]reflect.Type)
 	out := make(map[string]reflect.Type)
@@ -16,12 +19,12 @@ func Methods(v interface{}) (map[string]reflect.Value,
 		method := fooType.Method(i)
 		// We're assuming that RPC is like this
 		// Hello(in) (out, err)
-		calls[method.Name] = method.Func
+		calls[name(method.Name)] = method.Func
 		// method.Type holds the prototype of the method, which is a function
 		itype := method.Type.In(2).Elem() // get the actual type, not the poionter
 		otype := method.Type.In(3).Elem()
-		in[method.Name] = itype
-		out[method.Name] = otype
+		in[name(method.Name)] = itype
+		out[name(method.Name)] = otype
 	}
 
 	return calls, in, out
