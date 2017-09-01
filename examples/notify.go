@@ -8,7 +8,7 @@ import (
 
 func _assert(err error) {
 	if err != nil {
-		log.Fatalln(err)
+		log.Errorf(err)
 	}
 }
 
