@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -23,13 +24,16 @@ func main() {
 	)
 	name := fmt.Sprintf("host.agent.%s", os.Args[1])
 	cli := hello.NewGreeterClient(name, producer)
-	ret, err := cli.Hello(nil, &hello.HelloRequest{
+	ret, err := cli.Hello(context.Background(), &hello.HelloRequest{
 		Name: "鸠摩智",
 	})
 	_assert(err)
-	fmt.Printf("returned: %v\n", ret)
-	_, err = cli.Nihao(nil, &hello.HelloRequest{
+	if err != nil {
+		fmt.Printf("returned: %v\n", ret)
+	}
+	_, err = cli.Nihao(context.Background(), &hello.HelloRequest{
 		Name: "王语嫣",
 	})
 	_assert(err)
+	producer.Close()
 }
