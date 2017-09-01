@@ -141,7 +141,7 @@ func (c *Client) toResult(d *amqp.Delivery) (typ string, v interface{}, err erro
 	return
 }
 
-func (c *Client) _send(ex string, key string, corrid string, userType string, payload interface{}) error {
+func (c *Client) _send(ex string, key string, corrid string, typ string, payload interface{}) error {
 	pl, err := c.serializer.Marshal(payload)
 	if err != nil {
 		return err
@@ -154,8 +154,11 @@ func (c *Client) _send(ex string, key string, corrid string, userType string, pa
 		CorrelationId: corrid,
 		Body:          []byte(pl),
 	}
+	if typ == Command {
+		msg.Expiration = RPCTTL
+	}
 
-	log.Printf("Sending to %s on %s with %s, type: %s", ex, key, corrid, userType)
+	log.Printf("Sending to %s on %s with %s, type: %s", ex, key, corrid, typ)
 	return c.ch.Publish(ex, key, false, false, msg)
 }
 

@@ -21,4 +21,7 @@ const (
 	Service      = "service"
 	TaskRunner   = "task_runner"
 	EventHandler = "event_handler"
+
+	// Defaults
+	RPCTTL = "5000"
 )
