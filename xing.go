@@ -298,7 +298,10 @@ func (c *Client) Respond(delivery amqp.Delivery, command string, payload interfa
 
 // Close ...
 func (c *Client) Close() {
-	// FIXME: should probably clean up stuff
+	_, err := c.ch.QueueDelete(c.resultQueue.Name, false, false, false)
+	if err != nil {
+		log.Warnf("Error deleting queue: %v", err)
+	}
 	c.conn.Close()
 }
 

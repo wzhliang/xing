@@ -37,6 +37,6 @@ func main() {
 	_, err = cli.Nihao(ctx, &hello.HelloRequest{
 		Name: "王语嫣",
 	})
-	producer.Close()
 	_assert(err)
+	producer.Close()
 }
