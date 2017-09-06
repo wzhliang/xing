@@ -1,6 +1,8 @@
 # 准备
+0. 需要安装protobuf compiler - protoc 和一个针对本项目的compiler plugin
 0. 下载安装protoc:
     * [https://github.com/google/protobuf/releases](https://github.com/google/protobuf/releases)
+    * [gitee mirror (incomplete)](https://gitee.com/wisecloud/protobuf/attach_files)
 0. `go get github.com/google/protobuf`
 0. `go get github.com/wzhliang/protobuf`
 0. `cd $GOPATH/src/github.com/wzhliang/protobuf && make`
@@ -8,6 +10,7 @@
 # protobuf
 * RPC和event都是通过protobuf实现的。需要先定义protobuf文件。参见`examples/hello`
 * 用`protoc --go_out=plugins=xing:. hello.proto`命令编译Go语言实现
+    * 用你自己的proto文件替换`hello.proto`
 * 编写protocol真正的实现
 * 如果需要无返回的RPC，可以使用特定的`Void`返回message。
     * `.proto` 文件里面需要有定义改message
