@@ -38,5 +38,13 @@ func main() {
 		Name: "王语嫣",
 	})
 	_assert(err)
+	cli = hello.NewGreeterClient("host.server", producer)
+	ret, err = cli.Hello(ctx, &hello.HelloRequest{
+		Name: "鸠摩智",
+	})
+	_assert(err)
+	if err == nil {
+		fmt.Printf("returned: %s\n", ret.Greeting)
+	}
 	producer.Close()
 }

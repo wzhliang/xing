@@ -214,6 +214,11 @@ func (c *Client) Call(ctx context.Context, target string, method string, payload
 		var err error
 		var msgs <-chan amqp.Delivery
 		if sync {
+			err := c.newChannel() // FIXME: ugly hack
+			if err != nil {
+				errCh <- err
+				return
+			}
 			msgs, err = c.ch.Consume(c.resultQueue.Name, "", false, false, false, false, nil)
 			if err != nil {
 				errCh <- err
