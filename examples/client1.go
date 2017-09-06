@@ -22,8 +22,8 @@ func main() {
 		xing.SetIdentifier(&xing.NoneIdentifier{}),
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
-	name := fmt.Sprintf("host.agent.%s", os.Args[1])
-	cli := hello.NewGreeterClient(name, producer)
+	target := fmt.Sprintf("host.agent.%s", os.Args[1])
+	cli := hello.NewGreeterClient(target, producer)
 	ret, err := cli.Hello(context.Background(), &hello.HelloRequest{
 		Name: "鸠摩智",
 	})
