@@ -2,6 +2,7 @@ package xing
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"reflect"
 	"strings"
@@ -50,6 +51,13 @@ func SetInterets(topic ...string) ClientOpt {
 	}
 }
 
+// SetTLSConfig ...
+func SetTLSConfig(cfg *tls.Config) ClientOpt {
+	return func(c *Client) {
+		c.tlsConfig = cfg
+	}
+}
+
 func resultTopicName(who string) string {
 	// who has to have 3 segments
 	return fmt.Sprintf("%s.result.*", who)
@@ -65,6 +73,7 @@ type Client struct {
 	queue        amqp.Queue
 	serviceQueue amqp.Queue
 	resultQueue  amqp.Queue
+	tlsConfig    *tls.Config
 	serializer   Serializer
 	identifier   Identifier
 	rpcCounter   uint
@@ -309,6 +318,13 @@ func (c *Client) Close() {
 	c.conn.Close()
 }
 
+func (c *Client) connect() (*amqp.Connection, error) {
+	if c.tlsConfig != nil {
+		return amqp.DialTLS(c.url, c.tlsConfig)
+	}
+	return amqp.Dial(c.url)
+}
+
 func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 	c := &Client{
 		name:       fmt.Sprintf("%s.%s", name, (&RandomIdentifier{}).InstanceID()),
@@ -326,7 +342,7 @@ func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 	if topicLength(name) == 3 {
 		c.name = name // Allow client to specify it's own name
 	}
-	conn, err := amqp.Dial(url)
+	conn, err := c.connect()
 	if err != nil {
 		return nil, err
 	}
