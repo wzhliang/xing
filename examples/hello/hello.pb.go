@@ -82,7 +82,6 @@ func init() {
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ context.Context
-var _ client.Option
 
 // Client API for Greeter service
 
@@ -108,7 +107,7 @@ func NewGreeterClient(serviceName string, c *client.Client) GreeterClient {
 }
 
 func (c *greeterClient) Hello(ctx context.Context, in *HelloRequest, opts ...client.CallOption) (*HelloResponse, error) {
-	_, out, err := c.c.Call(ctx, c.serviceName, "Hello", in, true)
+	_, out, err := c.c.Call(ctx, c.serviceName, "Greeter::Hello", in, true)
 	if out == nil {
 		return nil, err
 	}
@@ -117,7 +116,7 @@ func (c *greeterClient) Hello(ctx context.Context, in *HelloRequest, opts ...cli
 }
 
 func (c *greeterClient) Nihao(ctx context.Context, in *HelloRequest, opts ...client.CallOption) (*Void, error) {
-	_, _, err := c.c.Call(ctx, c.serviceName, "Nihao", in, false)
+	_, _, err := c.c.Call(ctx, c.serviceName, "Greeter::Nihao", in, false)
 	return nil, err
 }
 
@@ -129,7 +128,7 @@ type GreeterHandler interface {
 }
 
 func RegisterGreeterHandler(s *client.Client, hdlr GreeterHandler) {
-	s.NewHandler(hdlr)
+	s.NewHandler("Greeter", hdlr)
 }
 
 type Greeter struct {
