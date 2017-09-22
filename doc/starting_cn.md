@@ -4,6 +4,7 @@
     * [https://github.com/google/protobuf/releases](https://github.com/google/protobuf/releases)
     * [gitee mirror (incomplete)](https://gitee.com/wisecloud/protobuf/attach_files)
 0. `go get github.com/google/protobuf`
+    * 为编译protobuf做准备
 0. `go get github.com/wzhliang/protobuf`
 0. `cd $GOPATH/src/github.com/wzhliang/protobuf && make`
 
