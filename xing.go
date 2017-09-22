@@ -22,7 +22,7 @@ import (
 // TODO:
 // - check usage of autoAck
 // - turn on exclusive for all?
-// - hide AMQP deatils like amqp.Delivery from interface
+// - hide AMQP details like amqp.Delivery from interface
 
 // ClientOpt ...
 type ClientOpt func(*Client)
