@@ -36,3 +36,13 @@
 * `cli := NewClient()`
 * `cli.Notify()`
 * 参见 `examples/{evt-server, notify}.go`
+
+# 服务注册
+服务注册和健康检查通过心跳行为实现。用户应该自行实现`HealthChecker()`并提供给服务。
+同时用户应该制定服务注册中心类型，现在仅仅支持consul。在服务正确初始化之后，可以调用
+
+    Register(address, port, tags, ttl)
+
+来注册该服务。系统会规律的调用health checker并决定是否注册。
+
+参见 `examples/register.go`
