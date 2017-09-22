@@ -58,6 +58,20 @@ func SetTLSConfig(cfg *tls.Config) ClientOpt {
 	}
 }
 
+// SetRegistrator ...
+func SetRegistrator(reg Registrator) ClientOpt {
+	return func(c *Client) {
+		c.registrator = reg
+	}
+}
+
+// SetHealthChecker ...
+func SetHealthChecker(hc HealthChecker) ClientOpt {
+	return func(c *Client) {
+		c.checker = hc
+	}
+}
+
 func resultTopicName(who string) string {
 	// who has to have 3 segments
 	return fmt.Sprintf("%s.result.*", who)
@@ -83,6 +97,8 @@ type Client struct {
 	inputs       map[string]reflect.Type
 	outputs      map[string]reflect.Type
 	svc          map[string]interface{} // key is only service
+	registrator  Registrator
+	checker      HealthChecker
 }
 
 func (c *Client) exchange(typ string) string {
@@ -129,16 +145,37 @@ func (c *Client) taskid() string {
 }
 
 func (c *Client) isConsumer() bool {
-	return c.typ == Service || c.typ == TaskRunner || c.typ == EventHandler
+	return c.typ == ServiceClient || c.typ == TaskRunnerClient || c.typ == EventHandlerClient
 }
 
 func (c *Client) isService() bool {
-	return c.typ == Service
+	return c.typ == ServiceClient
 }
 
-// should only be called by individual service (non balanced)
-func (c *Client) register() error {
-	return c.send(c.name, Event, Register, c.serializer.DefaultValue())
+// Register ...
+func (c *Client) Register(address string, port int, tags map[string]string, ttl time.Duration) error {
+	if c.registrator == nil || c.checker == nil {
+		log.Warnf("Need registrator and healthchecker to register.")
+		return fmt.Errorf("Invalid configuration")
+	}
+	go func() {
+		for {
+			svc := &Service{
+				Name:     c.service(),
+				Instance: c.instance(),
+				Address:  address,
+				Port:     port,
+				Tags:     tags,
+			}
+			if c.checker.Healthy() {
+				c.registrator.Register(svc, ttl)
+			} else {
+				c.registrator.Deregister(svc)
+			}
+			time.Sleep(ttl)
+		}
+	}()
+	return nil
 }
 
 func (c *Client) toResult(d *amqp.Delivery) (typ string, v interface{}, err error) {
@@ -378,7 +415,7 @@ func NewClient(name string, url string, opts ...ClientOpt) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.typ = Producer
+	c.typ = ProducerClient
 	qn := fmt.Sprintf("xing.C.%s.result", name)
 	c.resultQueue, err = c.ch.QueueDeclare(qn, false, false, false, false, nil)
 	if err != nil {
@@ -404,7 +441,7 @@ func NewService(name string, url string, opts ...ClientOpt) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.typ = Service
+	c.typ = ServiceClient
 	// Same queue for all services - load balancing
 	if topicLength(name) != 2 && topicLength(name) != 3 {
 		return nil, fmt.Errorf("Invalid name for service: %s", name)
@@ -420,10 +457,6 @@ func NewService(name string, url string, opts ...ClientOpt) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = c.register()
-	if err != nil {
-		return nil, err
-	}
 	return c, err
 }
 
@@ -433,7 +466,7 @@ func NewTaskRunner(name string, url string, opts ...ClientOpt) (*Client, error) 
 	if err != nil {
 		return nil, err
 	}
-	c.typ = TaskRunner
+	c.typ = TaskRunnerClient
 	if topicLength(name) != 3 {
 		return nil, fmt.Errorf("invalid name for task runner: %s", name)
 	}
@@ -448,10 +481,6 @@ func NewTaskRunner(name string, url string, opts ...ClientOpt) (*Client, error) 
 	if err != nil {
 		return nil, err
 	}
-	err = c.register()
-	if err != nil {
-		return nil, err
-	}
 	return c, err
 }
 
@@ -461,7 +490,7 @@ func NewEventHandler(name string, url string, opts ...ClientOpt) (*Client, error
 	if err != nil {
 		return nil, err
 	}
-	c.typ = EventHandler
+	c.typ = EventHandlerClient
 	n := fmt.Sprintf("xing.S.evh-%s", c.name)
 	c.queue, err = c.ch.QueueDeclare(n, false, false, false, false, nil)
 	if err != nil {
@@ -473,10 +502,6 @@ func NewEventHandler(name string, url string, opts ...ClientOpt) (*Client, error
 		if err != nil {
 			return nil, err
 		}
-	}
-	err = c.register()
-	if err != nil {
-		return nil, err
 	}
 	return c, err
 }

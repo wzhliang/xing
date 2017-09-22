@@ -17,10 +17,10 @@ const (
 	EventExchange = "xing.event"
 
 	// Client Types
-	Producer     = "producer"
-	Service      = "service"
-	TaskRunner   = "task_runner"
-	EventHandler = "event_handler"
+	ProducerClient     = "producer"
+	ServiceClient      = "service"
+	TaskRunnerClient   = "task_runner"
+	EventHandlerClient = "event_handler"
 
 	// Defaults
 	RPCTTL = "5000"
