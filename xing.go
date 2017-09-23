@@ -241,14 +241,14 @@ func (c *Client) Notify(target string, event string, payload interface{}) error 
 }
 
 func (c *Client) newChannel() error {
-	c.ch.Close()
 	c.m.Lock()
+	c.ch.Close()
 	ch, err := c.conn.Channel()
+	c.ch = ch
 	c.m.Unlock()
 	if err != nil {
 		return err
 	}
-	c.ch = ch
 	return nil
 }
 
