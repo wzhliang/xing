@@ -230,7 +230,7 @@ func (c *Client) send(target string, _type string, event string, payload interfa
 	} else if topicLength(target) == 3 {
 		key = fmt.Sprintf("%s.%s.%s", target, _type, event)
 	} else {
-		return fmt.Errorf("Invalid target. %s", target)
+		return fmt.Errorf("Invalid target: %s", target)
 	}
 	return c._send(ex, key, cor, event, payload)
 }
