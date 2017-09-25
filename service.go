@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/micro/go-micro/registry"
+	etcd "github.com/micro/go-plugins/registry/etcdv3"
 	"github.com/sirupsen/logrus"
 )
 
@@ -50,21 +51,26 @@ type Registrator interface {
 	GetService(name string, selector Selector) (*Service, error)
 }
 
-// ConsulRegistrator ...
-type ConsulRegistrator struct {
+type commonRegistrator struct {
 	reg registry.Registry
 }
 
 // NewConsulRegistrator ...
-func NewConsulRegistrator() Registrator {
-	// FIXME: add options
-	reg := registry.NewRegistry()
-	cr := &ConsulRegistrator{reg: reg}
+func NewConsulRegistrator(opts ...registry.Option) Registrator {
+	reg := registry.NewRegistry(opts...)
+	cr := &commonRegistrator{reg: reg}
+	return cr
+}
+
+// NewEtcdRegistrator ...
+func NewEtcdRegistrator(opts ...registry.Option) Registrator {
+	reg := etcd.NewRegistry(opts...)
+	cr := &commonRegistrator{reg: reg}
 	return cr
 }
 
 // Register ...
-func (cr *ConsulRegistrator) Register(s *Service, ttl time.Duration) error {
+func (cr *commonRegistrator) Register(s *Service, ttl time.Duration) error {
 	nodes := make([]*registry.Node, 0, 0)
 	nodes = append(nodes, &registry.Node{
 		Id:      s.Instance,
@@ -85,13 +91,13 @@ func (cr *ConsulRegistrator) Register(s *Service, ttl time.Duration) error {
 }
 
 // Deregister ...
-func (cr *ConsulRegistrator) Deregister(s *Service) error {
+func (cr *commonRegistrator) Deregister(s *Service) error {
 	logrus.Infof("Deregistering %s from %s:%d", s.Name, s.Address, s.Port)
 	return cr.reg.Deregister(toMicroService(s))
 }
 
 // GetService ...
-func (cr *ConsulRegistrator) GetService(name string, selector Selector) (*Service, error) {
+func (cr *commonRegistrator) GetService(name string, selector Selector) (*Service, error) {
 	svcs, err := cr.reg.GetService(name)
 	if err != nil {
 		logrus.Errorf("Failed to get service %v", err)
