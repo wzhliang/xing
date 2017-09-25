@@ -24,4 +24,7 @@ const (
 
 	// Defaults
 	RPCTTL = "5000"
+
+	// Threshold
+	MinHeatbeat = 3
 )

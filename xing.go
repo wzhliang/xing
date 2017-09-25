@@ -158,6 +158,9 @@ func (c *Client) Register(address string, port int, tags map[string]string, ttl 
 		log.Warnf("Need registrator and healthchecker to register.")
 		return fmt.Errorf("Invalid configuration")
 	}
+	if ttl < MinHeatbeat*time.Second {
+		ttl = MinHeatbeat * time.Second
+	}
 	go func() {
 		for {
 			svc := &Service{
@@ -168,11 +171,23 @@ func (c *Client) Register(address string, port int, tags map[string]string, ttl 
 				Tags:     tags,
 			}
 			if c.checker.Healthy() {
-				c.registrator.Register(svc, ttl)
+				for tries := 3; tries > 0; tries-- {
+					err := c.registrator.Register(svc, ttl)
+					if err == nil {
+						break
+					}
+					log.Warnf("Retrying...")
+				}
 			} else {
-				c.registrator.Deregister(svc)
+				for tries := 3; tries > 0; tries-- {
+					err := c.registrator.Deregister(svc)
+					if err == nil {
+						break
+					}
+					log.Warnf("Retrying...")
+				}
 			}
-			time.Sleep(ttl)
+			time.Sleep(ttl - 1*time.Second)
 		}
 	}()
 	return nil

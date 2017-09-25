@@ -85,7 +85,7 @@ func (cr *commonRegistrator) Register(s *Service, ttl time.Duration) error {
 		Nodes:    nodes,
 	}, registry.RegisterTTL(ttl))
 	if err != nil {
-		logrus.Infof("Failed to to register service %s: %v", s.Name, err)
+		logrus.Errorf("Failed to register service %s: %v", s.Name, err)
 	}
 	return err
 }
