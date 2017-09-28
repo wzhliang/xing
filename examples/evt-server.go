@@ -41,11 +41,6 @@ func main() {
 
 	hello.RegisterGreeterHandler(consumer, &Greeter{})
 
-	forever := make(chan bool)
-
-	go func() {
-		consumer.Run()
-	}()
 	log.Printf(" [*] Waiting for messages. To exit press CTRL+C")
-	<-forever
+	consumer.Run()
 }

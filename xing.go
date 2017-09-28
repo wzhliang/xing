@@ -79,7 +79,7 @@ func resultTopicName(who string) string {
 
 // Client ...
 type Client struct {
-	m            sync.Mutex
+	sync.Mutex
 	name         string
 	url          string
 	conn         *amqp.Connection
@@ -99,6 +99,7 @@ type Client struct {
 	svc          map[string]interface{} // key is only service
 	registrator  Registrator
 	checker      HealthChecker
+	watchStop    chan bool
 }
 
 func (c *Client) exchange(typ string) string {
@@ -217,6 +218,11 @@ func (c *Client) _send(ex string, key string, corrid string, typ string, payload
 	if typ == Command {
 		msg.Expiration = RPCTTL
 	}
+	err = c.setup()
+	if err != nil {
+		log.Errorf("No connection to server.")
+		return err
+	}
 
 	log.Printf("Sending to %s on %s with %s, type: %s", ex, key, corrid, typ)
 	return c.ch.Publish(ex, key, false, false, msg)
@@ -225,9 +231,9 @@ func (c *Client) _send(ex string, key string, corrid string, typ string, payload
 func (c *Client) send(target string, _type string, event string, payload interface{}) error {
 	var cor string
 	if _type == Command {
-		c.m.Lock()
+		c.Lock()
 		c.rpcCounter++
-		c.m.Unlock()
+		c.Unlock()
 		log.Printf("rpcCounter: %d", c.rpcCounter)
 		cor = c.corrid()
 	} else if _type == Task {
@@ -256,11 +262,11 @@ func (c *Client) Notify(target string, event string, payload interface{}) error 
 }
 
 func (c *Client) newChannel() error {
-	c.m.Lock()
+	c.Lock()
 	c.ch.Close()
 	ch, err := c.conn.Channel()
 	c.ch = ch
-	c.m.Unlock()
+	c.Unlock()
 	if err != nil {
 		return err
 	}
@@ -368,6 +374,7 @@ func (c *Client) Close() {
 		log.Warnf("Error deleting queue: %v", err)
 	}
 	c.conn.Close()
+	c.watchStop <- true
 }
 
 func (c *Client) connect() (*amqp.Connection, error) {
@@ -377,6 +384,67 @@ func (c *Client) connect() (*amqp.Connection, error) {
 	return amqp.Dial(c.url)
 }
 
+// watches the connection
+func (c *Client) watch() {
+	errors := make(chan *amqp.Error)
+	c.conn.NotifyClose(errors)
+
+	for {
+		select {
+		case err := <-errors:
+			log.Warnf("connection lost: %v", err)
+			c.Lock()
+			c.conn = nil
+			c.Unlock()
+			return
+		case stop := <-c.watchStop:
+			if stop {
+				return
+			}
+		}
+	}
+}
+
+func (c *Client) setup() error {
+	if c.conn != nil {
+		return nil
+	}
+	log.Infof("setting up client...")
+	conn, err := c.connect()
+	if err != nil {
+		return err
+	}
+	c.Lock()
+	c.conn = conn
+	c.Unlock()
+
+	ch, err := c.conn.Channel()
+	if err != nil {
+		return err
+	}
+	c.Lock()
+	c.ch = ch
+	c.Unlock()
+
+	err = ch.ExchangeDeclare(EventExchange, "topic", true, true, false, false, nil)
+	if err != nil {
+		return err
+	}
+
+	err = ch.ExchangeDeclare(RPCExchange, "topic", true, true, false, false, nil)
+	if err != nil {
+		return err
+	}
+
+	err = ch.ExchangeDeclare(TaskExchange, "topic", true, true, false, false, nil)
+	if err != nil {
+		return err
+	}
+
+	go c.watch()
+	return nil
+}
+
 func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 	c := &Client{
 		name:       fmt.Sprintf("%s.%s", name, (&RandomIdentifier{}).InstanceID()),
@@ -384,6 +452,7 @@ func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 		serializer: &ProtoSerializer{},
 		identifier: &RandomIdentifier{},
 		svc:        make(map[string]interface{}),
+		watchStop:  make(chan bool),
 	}
 	// default to events from own domain
 	c.interests = []string{fmt.Sprintf("%s.#", c.domain())}
@@ -394,29 +463,7 @@ func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 	if topicLength(name) == 3 {
 		c.name = name // Allow client to specify it's own name
 	}
-	conn, err := c.connect()
-	if err != nil {
-		return nil, err
-	}
-	c.conn = conn
-
-	ch, err := c.conn.Channel()
-	if err != nil {
-		return nil, err
-	}
-	c.ch = ch
-
-	err = ch.ExchangeDeclare(EventExchange, "topic", true, true, false, false, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	err = ch.ExchangeDeclare(RPCExchange, "topic", true, true, false, false, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	err = ch.ExchangeDeclare(TaskExchange, "topic", true, true, false, false, nil)
+	err := c.setup()
 	if err != nil {
 		return nil, err
 	}
@@ -523,8 +570,8 @@ func NewEventHandler(name string, url string, opts ...ClientOpt) (*Client, error
 
 // NewHandler ...
 func (c *Client) NewHandler(service string, v interface{}) {
-	c.m.Lock()
-	defer c.m.Unlock()
+	c.Lock()
+	defer c.Unlock()
 	c.svc[service] = v // save the handler object
 	c.handlers, c.inputs, c.outputs = Methods(service, v)
 	for name := range c.handlers {
