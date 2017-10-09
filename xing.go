@@ -373,8 +373,8 @@ func (c *Client) Close() {
 	if err != nil {
 		log.Warnf("Error deleting queue: %v", err)
 	}
-	c.conn.Close()
 	c.watchStop <- true
+	c.conn.Close()
 }
 
 func (c *Client) connect() (*amqp.Connection, error) {
