@@ -14,7 +14,7 @@ func _assert(err error) {
 
 func main() {
 	producer, err := xing.NewClient("ingress.controller", "amqp://guest:guest@localhost:5672/",
-		xing.SetIdentifier(&xing.NodeIdentifier{}),
+		xing.SetIdentifier(&xing.RandomIdentifier{}),
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
 	_assert(err)
