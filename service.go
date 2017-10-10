@@ -6,7 +6,7 @@ import (
 
 	"github.com/micro/go-micro/registry"
 	etcd "github.com/micro/go-plugins/registry/etcdv3"
-	"github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 // Service ...
@@ -77,7 +77,8 @@ func (cr *commonRegistrator) Register(s *Service, ttl time.Duration) error {
 		Address: s.Address,
 		Port:    s.Port,
 	})
-	logrus.Infof("Registering %s from %s:%d", s.Name, s.Address, s.Port)
+	log.Info().Str("name", s.Name).Str("addr", s.Address).Int("port", s.Port).
+		Msg("Registering service")
 	err := cr.reg.Register(&registry.Service{
 		Name:     s.Name,
 		Version:  "0.1",
@@ -85,14 +86,15 @@ func (cr *commonRegistrator) Register(s *Service, ttl time.Duration) error {
 		Nodes:    nodes,
 	}, registry.RegisterTTL(ttl))
 	if err != nil {
-		logrus.Errorf("Failed to register service %s: %v", s.Name, err)
+		log.Error().Str("name", s.Name).Err(err).Msg("Failed to register service")
 	}
 	return err
 }
 
 // Deregister ...
 func (cr *commonRegistrator) Deregister(s *Service) error {
-	logrus.Infof("Deregistering %s from %s:%d", s.Name, s.Address, s.Port)
+	log.Info().Str("name", s.Name).Str("addr", s.Address).Int("port", s.Port).
+		Msg("Deregistering service")
 	return cr.reg.Deregister(toMicroService(s))
 }
 
@@ -100,7 +102,7 @@ func (cr *commonRegistrator) Deregister(s *Service) error {
 func (cr *commonRegistrator) GetService(name string, selector Selector) (*Service, error) {
 	svcs, err := cr.reg.GetService(name)
 	if err != nil {
-		logrus.Errorf("Failed to get service %v", err)
+		log.Error().Err(err).Msg("Failed to get service")
 		return nil, err
 	}
 	// XXX: I still don't know why svcs is an array

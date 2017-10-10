@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/streadway/amqp"
 )
 
@@ -156,7 +158,7 @@ func (c *Client) isService() bool {
 // Register ...
 func (c *Client) Register(address string, port int, tags map[string]string, ttl time.Duration) error {
 	if c.registrator == nil || c.checker == nil {
-		log.Warnf("Need registrator and healthchecker to register.")
+		log.Warn().Msg("Need registrator and healthchecker to register.")
 		return fmt.Errorf("Invalid configuration")
 	}
 	if ttl < MinHeatbeat*time.Second {
@@ -177,7 +179,7 @@ func (c *Client) Register(address string, port int, tags map[string]string, ttl 
 					if err == nil {
 						break
 					}
-					log.Warnf("Retrying...")
+					log.Warn().Msg("Retrying...")
 				}
 			} else {
 				for tries := 3; tries > 0; tries-- {
@@ -185,7 +187,7 @@ func (c *Client) Register(address string, port int, tags map[string]string, ttl 
 					if err == nil {
 						break
 					}
-					log.Warnf("Retrying...")
+					log.Warn().Msg("Retrying...")
 				}
 			}
 			time.Sleep(ttl - 1*time.Second)
@@ -196,7 +198,7 @@ func (c *Client) Register(address string, port int, tags map[string]string, ttl 
 
 func (c *Client) toResult(d *amqp.Delivery) (typ string, v interface{}, err error) {
 	typ = c.respTo(d.RoutingKey)
-	log.Infof("response to: %s -> %v", typ, c.outputs[typ])
+	log.Info().Str("type", typ).Msgf("response %v", c.outputs[typ])
 	v = reflect.New(c.outputs[typ]).Interface()
 	err = c.serializer.Unmarshal(d.Body, v)
 	return
@@ -220,11 +222,12 @@ func (c *Client) _send(ex string, key string, corrid string, typ string, payload
 	}
 	err = c.setup()
 	if err != nil {
-		log.Errorf("No connection to server.")
+		log.Error().Msg("No connection to server.")
 		return err
 	}
 
-	log.Printf("Sending to %s on %s with %s, type: %s", ex, key, corrid, typ)
+	log.Info().Str("to", ex).Str("key", key).Str("corid", corrid).Str("type", typ).
+		Msg("Sending")
 	return c.ch.Publish(ex, key, false, false, msg)
 }
 
@@ -234,11 +237,11 @@ func (c *Client) send(target string, _type string, event string, payload interfa
 		c.Lock()
 		c.rpcCounter++
 		c.Unlock()
-		log.Printf("rpcCounter: %d", c.rpcCounter)
+		log.Info().Uint("counter", c.rpcCounter).Msg("send")
 		cor = c.corrid()
 	} else if _type == Task {
 		c.rpcCounter++
-		log.Printf("rpcCounter: %d", c.rpcCounter)
+		log.Info().Uint("counter", c.rpcCounter).Msg("send")
 		cor = c.taskid()
 	} else {
 		cor = "N/A"
@@ -321,7 +324,7 @@ func (c *Client) Call(ctx context.Context, target string, method string, payload
 	case msg := <-msgCh:
 		return c.toResult(&msg)
 	case err := <-errCh:
-		log.Errorf("operation %s failed: %v", method, err)
+		log.Error().Str("method", method).Err(err).Msg("Operation failed")
 		return "", nil, err
 	case <-ctx.Done():
 		err := fmt.Errorf("RPC timeout: %s", method)
@@ -371,7 +374,7 @@ func (c *Client) Respond(delivery amqp.Delivery, command string, payload interfa
 func (c *Client) Close() {
 	_, err := c.ch.QueueDelete(c.resultQueue.Name, false, false, false)
 	if err != nil {
-		log.Warnf("Error deleting queue: %v", err)
+		log.Warn().Err(err).Msg("Error deleting queue")
 	}
 	c.watchStop <- true
 	c.conn.Close()
@@ -392,7 +395,7 @@ func (c *Client) watch() {
 	for {
 		select {
 		case err := <-errors:
-			log.Warnf("connection lost: %v", err)
+			log.Warn().Err(err).Msg("Connection lost")
 			c.Lock()
 			c.conn = nil
 			c.Unlock()
@@ -409,7 +412,7 @@ func (c *Client) setup() error {
 	if c.conn != nil {
 		return nil
 	}
-	log.Infof("setting up client...")
+	log.Info().Msg("Setting up client...")
 	conn, err := c.connect()
 	if err != nil {
 		return err
@@ -484,12 +487,14 @@ func NewClient(name string, url string, opts ...ClientOpt) (*Client, error) {
 		return nil, err
 	}
 	key := resultTopicName(c.name)
-	log.Printf("Subscribing (%s <-> %s) on %s", c.resultQueue.Name, RPCExchange, key)
+	log.Info().Str("queue", c.resultQueue.Name).Str("exchange", RPCExchange).Str("key", key).
+		Msg("Subscribing")
 	err = c.ch.QueueBind(c.resultQueue.Name, key, RPCExchange, false, nil)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("Subscribing (%s <-> %s) on %s", c.resultQueue.Name, TaskExchange, key)
+	log.Info().Str("queue", c.resultQueue.Name).Str("exchange", TaskExchange).Str("key", key).
+		Msg("Subscribing")
 	err = c.ch.QueueBind(c.resultQueue.Name, key, TaskExchange, false, nil)
 	if err != nil {
 		return nil, err
@@ -514,7 +519,8 @@ func NewService(name string, url string, opts ...ClientOpt) (*Client, error) {
 		return nil, err
 	}
 	key := fmt.Sprintf("%s.#", name)
-	log.Printf("Subscribing (%s <-> %s) on %s", svc, RPCExchange, key)
+	log.Info().Str("queue", c.resultQueue.Name).Str("exchange", RPCExchange).Str("key", key).
+		Msg("Subscribing")
 	err = c.ch.QueueBind(svc, key, RPCExchange, false, nil)
 	if err != nil {
 		return nil, err
@@ -538,7 +544,8 @@ func NewTaskRunner(name string, url string, opts ...ClientOpt) (*Client, error) 
 		return nil, err
 	}
 	key := fmt.Sprintf("%s.%s.*", c.name, Task)
-	log.Printf("Subscribing (%s <-> %s) on %s", svc, TaskExchange, key)
+	log.Info().Str("queue", c.resultQueue.Name).Str("exchange", TaskExchange).Str("key", key).
+		Msg("Subscribing")
 	err = c.ch.QueueBind(svc, key, TaskExchange, false, nil)
 	if err != nil {
 		return nil, err
@@ -559,7 +566,8 @@ func NewEventHandler(name string, url string, opts ...ClientOpt) (*Client, error
 		return nil, err
 	}
 	for _, key := range c.interests {
-		log.Printf("Subscribing (%s <-> %s) on %s", c.queue.Name, EventExchange, key)
+		log.Info().Str("queue", c.resultQueue.Name).Str("exchange", EventExchange).Str("key", key).
+			Msg("Subscribing")
 		err = c.ch.QueueBind(c.queue.Name, key, EventExchange, false, nil)
 		if err != nil {
 			return nil, err
@@ -575,7 +583,7 @@ func (c *Client) NewHandler(service string, v interface{}) {
 	c.svc[service] = v // save the handler object
 	c.handlers, c.inputs, c.outputs = Methods(service, v)
 	for name := range c.handlers {
-		log.Infof("+++ %s", c.handlers[name])
+		log.Info().Str("name", c.handlers[name].String()).Msg("+++ ")
 	}
 }
 
@@ -594,15 +602,14 @@ func (c *Client) Run() error {
 	for d := range msgs {
 		utype := c.userType(d.RoutingKey)
 		if c.inputs[utype] == nil {
-			log.Infof("Unknown method: %s", utype)
+			log.Info().Str("method", utype).Msg("Unknown method")
 			continue
 		}
-		log.Infof("method: %s", utype)
+		log.Info().Str("method", utype).Msg("Handling")
 		m := reflect.New(c.inputs[utype])
 		err := c.serializer.Unmarshal(d.Body, m.Interface())
 		if err != nil {
-			log.Errorf("Unable to unmarshal message: %s", d.Body)
-			log.Info(err)
+			log.Error().Bytes("msg", d.Body).Err(err).Msg("Unable to unmarshal message")
 			continue
 		}
 		// I know the signature
@@ -614,15 +621,15 @@ func (c *Client) Run() error {
 		params = append(params, resp)
 		ret := c.handlers[utype].Call(params)
 		if !ret[0].IsNil() {
-			log.Errorf("RPC [%s] failed: %v", utype, ret[0])
+			log.Error().Str("method", utype).Msg("RPC failed")
 			// FIXME: return error
 		}
 		if !c.isService() || c.outputs[utype].Name() == "Void" { // magic Void
-			log.Info("No response required.")
+			log.Info().Msg("No response required.")
 		} else {
 			err = c.Respond(d, utype, resp.Interface())
 			if err != nil {
-				log.Errorf("Unable to send response: %v", err)
+				log.Error().Err(err).Msg("Unable to send response")
 				return err
 			}
 		}
@@ -634,4 +641,8 @@ func (c *Client) Run() error {
 
 func topicLength(name string) int {
 	return len(strings.Split(name, "."))
+}
+
+func init() {
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 }
