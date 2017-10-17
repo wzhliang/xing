@@ -37,13 +37,8 @@ func main() {
 	)
 	err_assert(err)
 
-	forever := make(chan bool)
-
 	hello.RegisterGreeterHandler(svc, &Greeter{})
 
-	go func() {
-		svc.Run()
-	}()
 	log.Printf(" [*] Waiting for messages. To exit press CTRL+C")
-	<-forever
+	svc.Run()
 }
