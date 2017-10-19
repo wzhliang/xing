@@ -653,7 +653,7 @@ func (c *Client) _run() error {
 		log.Error().Msgf("failed to set QOS for channel: %v", err)
 		return err
 	}
-	msgs, err := c.ch.Consume(c.queue.Name, c.name, autoAck, true, false, false, nil)
+	msgs, err := c.ch.Consume(c.queue.Name, c.name, autoAck, false, false, false, nil)
 	if err != nil {
 		log.Error().Msgf("consume failed: %v", err)
 		return err
