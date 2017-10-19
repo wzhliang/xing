@@ -233,7 +233,7 @@ func (c *Client) _send(ex string, key string, corrid string, typ string, payload
 	if typ == Command {
 		msg.Expiration = RPCTTL
 	}
-	err = c.setupClient() // handle broker outage
+	err = c.setup()
 	if err != nil {
 		log.Error().Msg("No connection to server.")
 		return err
@@ -278,9 +278,9 @@ func (c *Client) Notify(target string, event string, payload interface{}) error 
 }
 
 func (c *Client) newChannel() error {
+	c.Lock()
 	c.ch.Close()
 	ch, err := c.conn.Channel()
-	c.Lock()
 	c.ch = ch
 	c.Unlock()
 	if err != nil {
@@ -296,14 +296,8 @@ func (c *Client) Call(ctx context.Context, target string, method string, payload
 	go func() {
 		var err error
 		var msgs <-chan amqp.Delivery
-		// send also take care of broker outage
-		err = c.send(target, Command, method, payload)
-		if err != nil {
-			errCh <- err
-			return
-		}
 		if sync {
-			err := c.newChannel()
+			err := c.newChannel() // FIXME: ugly hack
 			if err != nil {
 				errCh <- err
 				return
@@ -318,6 +312,13 @@ func (c *Client) Call(ctx context.Context, target string, method string, payload
 				errCh <- err
 				return
 			}
+		}
+		err = c.send(target, Command, method, payload)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		if sync {
 			for m := range msgs {
 				if c.corrid() == m.CorrelationId {
 					m.Ack(false)
@@ -465,34 +466,6 @@ func (c *Client) setup() error {
 	return nil
 }
 
-func (c *Client) setupClient() error {
-	err := c.setup()
-	if err != nil {
-		return err
-	}
-
-	qn := fmt.Sprintf("xing.C.%s.result", c.service())
-	c.resultQueue, err = c.ch.QueueDeclare(qn, false, false, false, false, nil)
-	if err != nil {
-		return err
-	}
-	// for sending event this is overkill, but we'll leave it
-	key := resultTopicName(c.name)
-	log.Info().Str("queue", c.resultQueue.Name).Str("exchange", RPCExchange).Str("key", key).
-		Msg("Subscribing")
-	err = c.ch.QueueBind(c.resultQueue.Name, key, RPCExchange, false, nil)
-	if err != nil {
-		return err
-	}
-	log.Info().Str("queue", c.resultQueue.Name).Str("exchange", TaskExchange).Str("key", key).
-		Msg("Subscribing")
-	err = c.ch.QueueBind(c.resultQueue.Name, key, TaskExchange, false, nil)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func (c *Client) setupService() error {
 	err := c.setup()
 	if err != nil {
@@ -569,7 +542,21 @@ func NewClient(name string, url string, opts ...ClientOpt) (*Client, error) {
 		return nil, err
 	}
 	c.typ = ProducerClient
-	err = c.setupClient()
+	qn := fmt.Sprintf("xing.C.%s.result", name)
+	c.resultQueue, err = c.ch.QueueDeclare(qn, false, false, false, false, nil)
+	if err != nil {
+		return nil, err
+	}
+	key := resultTopicName(c.name)
+	log.Info().Str("queue", c.resultQueue.Name).Str("exchange", RPCExchange).Str("key", key).
+		Msg("Subscribing")
+	err = c.ch.QueueBind(c.resultQueue.Name, key, RPCExchange, false, nil)
+	if err != nil {
+		return nil, err
+	}
+	log.Info().Str("queue", c.resultQueue.Name).Str("exchange", TaskExchange).Str("key", key).
+		Msg("Subscribing")
+	err = c.ch.QueueBind(c.resultQueue.Name, key, TaskExchange, false, nil)
 	if err != nil {
 		return nil, err
 	}
