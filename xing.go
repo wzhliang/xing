@@ -25,6 +25,8 @@ import (
 // - check usage of autoAck
 // - turn on exclusive for all?
 // - hide AMQP details like amqp.Delivery from interface
+// - should we do something about undelivered response?
+//   e.g. rabbitmq crashed when we're sending RPC response
 
 // ClientOpt ...
 type ClientOpt func(*Client)
@@ -74,6 +76,15 @@ func SetHealthChecker(hc HealthChecker) ClientOpt {
 	}
 }
 
+// SetBrokerTimeout set a timeout for a server to limit broker reconnect
+// attempts. count: number of retries; interval: number of seconds between retries
+func SetBrokerTimeout(count, interval int) ClientOpt {
+	return func(c *Client) {
+		c.retryCount = count
+		c.retryInterval = interval
+	}
+}
+
 func resultTopicName(who string) string {
 	// who has to have 3 segments
 	return fmt.Sprintf("%s.result.*", who)
@@ -82,26 +93,28 @@ func resultTopicName(who string) string {
 // Client ...
 type Client struct {
 	sync.Mutex
-	name         string
-	url          string
-	conn         *amqp.Connection
-	ch           *amqp.Channel
-	queue        amqp.Queue
-	serviceQueue amqp.Queue
-	resultQueue  amqp.Queue
-	tlsConfig    *tls.Config
-	serializer   Serializer
-	identifier   Identifier
-	rpcCounter   uint
-	interests    []string
-	typ          string
-	handlers     map[string]reflect.Value // key is service::command
-	inputs       map[string]reflect.Type
-	outputs      map[string]reflect.Type
-	svc          map[string]interface{} // key is only service
-	registrator  Registrator
-	checker      HealthChecker
-	watchStop    chan bool
+	name          string
+	url           string
+	conn          *amqp.Connection
+	ch            *amqp.Channel
+	queue         amqp.Queue
+	serviceQueue  amqp.Queue
+	resultQueue   amqp.Queue
+	tlsConfig     *tls.Config
+	serializer    Serializer
+	identifier    Identifier
+	rpcCounter    uint
+	interests     []string
+	typ           string
+	handlers      map[string]reflect.Value // key is service::command
+	inputs        map[string]reflect.Type
+	outputs       map[string]reflect.Type
+	svc           map[string]interface{} // key is only service
+	registrator   Registrator
+	checker       HealthChecker
+	watchStop     chan bool
+	retryCount    int
+	retryInterval int
 }
 
 func (c *Client) exchange(typ string) string {
@@ -376,7 +389,7 @@ func (c *Client) Close() {
 	if err != nil {
 		log.Warn().Err(err).Msg("Error deleting queue")
 	}
-	c.watchStop <- true
+	c.stopWatch()
 	c.conn.Close()
 }
 
@@ -408,13 +421,17 @@ func (c *Client) watch() {
 	}
 }
 
+func (c *Client) stopWatch() {
+	c.watchStop <- true
+}
+
 func (c *Client) setup() error {
 	if c.conn != nil {
 		return nil
 	}
-	log.Info().Msg("Setting up client...")
 	conn, err := c.connect()
 	if err != nil {
+		log.Error().Msgf("connection failed: %v", err)
 		return err
 	}
 	c.Lock()
@@ -423,6 +440,7 @@ func (c *Client) setup() error {
 
 	ch, err := c.conn.Channel()
 	if err != nil {
+		log.Error().Msgf("creating channel failed: %v", err)
 		return err
 	}
 	c.Lock()
@@ -448,14 +466,57 @@ func (c *Client) setup() error {
 	return nil
 }
 
+func (c *Client) setupService() error {
+	err := c.setup()
+	if err != nil {
+		return err
+	}
+	name := c.service()
+	svc := fmt.Sprintf("xing.S.svc-%s", name)
+	c.serviceQueue, err = c.ch.QueueDeclare(svc, false, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+	key := fmt.Sprintf("%s.#", name)
+	log.Info().Str("queue", c.resultQueue.Name).Str("exchange", RPCExchange).Str("key", key).Msg("Subscribing")
+	err = c.ch.QueueBind(svc, key, RPCExchange, false, nil)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Client) setupEventHandler() error {
+	err := c.setup()
+	if err != nil {
+		return err
+	}
+	n := fmt.Sprintf("xing.S.evh-%s", c.name)
+	c.queue, err = c.ch.QueueDeclare(n, false, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+	for _, key := range c.interests {
+		log.Info().Str("queue", c.queue.Name).Str("exchange", EventExchange).Str("key", key).Msg("Subscribing")
+		err = c.ch.QueueBind(c.queue.Name, key, EventExchange, false, nil)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// common for both client and server
 func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 	c := &Client{
-		name:       fmt.Sprintf("%s.%s", name, (&RandomIdentifier{}).InstanceID()),
-		url:        url,
-		serializer: &ProtoSerializer{},
-		identifier: &RandomIdentifier{},
-		svc:        make(map[string]interface{}),
-		watchStop:  make(chan bool),
+		name:          fmt.Sprintf("%s.%s", name, (&RandomIdentifier{}).InstanceID()),
+		url:           url,
+		serializer:    &ProtoSerializer{},
+		identifier:    &RandomIdentifier{},
+		svc:           make(map[string]interface{}),
+		watchStop:     make(chan bool),
+		retryCount:    30,
+		retryInterval: 1,
 	}
 	// default to events from own domain
 	c.interests = []string{fmt.Sprintf("%s.#", c.domain())}
@@ -466,10 +527,6 @@ func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 	if topicLength(name) == 3 {
 		c.name = name // Allow client to specify it's own name
 	}
-	err := c.setup()
-	if err != nil {
-		return nil, err
-	}
 
 	return c, nil
 }
@@ -477,6 +534,10 @@ func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 // NewClient ...
 func NewClient(name string, url string, opts ...ClientOpt) (*Client, error) {
 	c, err := bootStrap(name, url, opts...)
+	if err != nil {
+		return nil, err
+	}
+	err = c.setup()
 	if err != nil {
 		return nil, err
 	}
@@ -513,15 +574,7 @@ func NewService(name string, url string, opts ...ClientOpt) (*Client, error) {
 	if topicLength(name) != 2 && topicLength(name) != 3 {
 		return nil, fmt.Errorf("Invalid name for service: %s", name)
 	}
-	svc := fmt.Sprintf("xing.S.svc-%s", name)
-	c.serviceQueue, err = c.ch.QueueDeclare(svc, false, false, false, false, nil)
-	if err != nil {
-		return nil, err
-	}
-	key := fmt.Sprintf("%s.#", name)
-	log.Info().Str("queue", c.resultQueue.Name).Str("exchange", RPCExchange).Str("key", key).
-		Msg("Subscribing")
-	err = c.ch.QueueBind(svc, key, RPCExchange, false, nil)
+	err = c.setupService()
 	if err != nil {
 		return nil, err
 	}
@@ -560,19 +613,11 @@ func NewEventHandler(name string, url string, opts ...ClientOpt) (*Client, error
 		return nil, err
 	}
 	c.typ = EventHandlerClient
-	n := fmt.Sprintf("xing.S.evh-%s", c.name)
-	c.queue, err = c.ch.QueueDeclare(n, false, false, false, false, nil)
+	err = c.setupEventHandler()
 	if err != nil {
 		return nil, err
 	}
-	for _, key := range c.interests {
-		log.Info().Str("queue", c.resultQueue.Name).Str("exchange", EventExchange).Str("key", key).
-			Msg("Subscribing")
-		err = c.ch.QueueBind(c.queue.Name, key, EventExchange, false, nil)
-		if err != nil {
-			return nil, err
-		}
-	}
+
 	return c, err
 }
 
@@ -588,14 +633,29 @@ func (c *Client) NewHandler(service string, v interface{}) {
 }
 
 // Run Only valid for service or event handler
-func (c *Client) Run() error {
+func (c *Client) _run() error {
 	if !c.isConsumer() {
 		panic("only consumer can start a server")
 	}
-	autoAck := c.typ == Event // for event, turn on auto ack
-	msgs, err := c.ch.Consume(c.queue.Name, "", false, false, autoAck, false, nil)
+	var err error
+	if c.isService() {
+		err = c.setupService()
+	} else {
+		err = c.setupEventHandler()
+	}
+	if err != nil {
+		return fmt.Errorf("unable to connect to server")
+	}
+	log.Info().Str("type", c.typ).Msg("server")
+	autoAck := false // FIXME!!!
 	err = c.ch.Qos(1, 0, false)
 	if err != nil {
+		log.Error().Msgf("failed to set QOS for channel: %v", err)
+		return err
+	}
+	msgs, err := c.ch.Consume(c.queue.Name, c.name, autoAck, true, false, false, nil)
+	if err != nil {
+		log.Error().Msgf("consume failed: %v", err)
 		return err
 	}
 
@@ -637,6 +697,17 @@ func (c *Client) Run() error {
 	}
 
 	return nil
+}
+
+// Run ...
+func (c *Client) Run() error {
+	var err error
+	for retry := c.retryCount; retry >= 0; retry-- {
+		log.Info().Msg("starting server...")
+		err = c._run()
+		time.Sleep(time.Duration(c.retryInterval) * time.Second)
+	}
+	return err
 }
 
 func topicLength(name string) int {

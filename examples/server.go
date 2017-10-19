@@ -33,11 +33,13 @@ func main() {
 	svc, err := xing.NewService("host.server",
 		"amqp://guest:guest@localhost:5672/",
 		xing.SetSerializer(&xing.JSONSerializer{}),
+		xing.SetBrokerTimeout(5, 2),
 	)
 	_assert(err)
 
 	hello.RegisterGreeterHandler(svc, &Greeter{})
 
 	log.Printf(" [*] Waiting for messages. To exit press CTRL+C")
-	svc.Run()
+	err = svc.Run()
+	log.Printf("Run returned: %v", err)
 }
