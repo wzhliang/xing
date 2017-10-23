@@ -16,18 +16,25 @@ func _assert(err error) {
 	}
 }
 
+func _assertReturn(req, resp string) {
+	if req != resp {
+		log.Errorf("Client: %s != %s", req, resp)
+	}
+}
+
 func main() {
 	url := "amqp://guest:guest@localhost:5672/"
-	producer, err := xing.NewClient("orchestration.controller", url,
+	producer, err := xing.NewClient("game.controller", url,
 		xing.SetIdentifier(&xing.NoneIdentifier{}),
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
-	target := fmt.Sprintf("host.agent.%s", os.Args[1])
+	target := fmt.Sprintf("game.agent.%s", os.Args[1])
 	cli := hello.NewGreeterClient(target, producer)
 	ret, err := cli.Hello(context.Background(), &hello.HelloRequest{
 		Name: "鸠摩智",
 	})
 	_assert(err)
+	_assertReturn("yo", ret.Greeting)
 	if err != nil {
 		fmt.Printf("returned: %v\n", ret)
 	}

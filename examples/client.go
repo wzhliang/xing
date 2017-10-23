@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -13,6 +12,12 @@ import (
 func _assert(err error) {
 	if err != nil {
 		log.Errorf("Client: %v", err)
+	}
+}
+
+func _assertReturn(req, resp string) {
+	if req != resp {
+		log.Errorf("Client: %s != %s", req, resp)
 	}
 }
 
@@ -32,19 +37,25 @@ func main() {
 	})
 	_assert(err)
 	if err == nil {
-		fmt.Printf("returned: %s\n", ret.Greeting)
+		_assertReturn("yo", ret.Greeting)
 	}
 	_, err = cli.Nihao(ctx, &hello.HelloRequest{
 		Name: "王语嫣",
 	})
 	_assert(err)
-	cli = hello.NewGreeterClient("host.server", producer)
 	ret, err = cli.Hello(ctx, &hello.HelloRequest{
-		Name: "鸠摩智",
+		Name: "王语嫣",
 	})
 	_assert(err)
 	if err == nil {
-		fmt.Printf("returned: %s\n", ret.Greeting)
+		_assertReturn("美女好", ret.Greeting)
+	}
+	ret, err = cli.Hello(ctx, &hello.HelloRequest{
+		Name: "段誉",
+	})
+	_assert(err)
+	if err == nil {
+		_assertReturn("陛下好", ret.Greeting)
 	}
 	producer.Close()
 }

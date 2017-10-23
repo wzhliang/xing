@@ -97,9 +97,7 @@ type Client struct {
 	url           string
 	conn          *amqp.Connection
 	ch            *amqp.Channel
-	queue         amqp.Queue
-	serviceQueue  amqp.Queue
-	resultQueue   amqp.Queue
+	queue         amqp.Queue // queue for consumption, for RPC client, it holds results
 	tlsConfig     *tls.Config
 	serializer    Serializer
 	identifier    Identifier
@@ -115,6 +113,7 @@ type Client struct {
 	watchStop     chan bool
 	retryCount    int
 	retryInterval int
+	single        bool
 }
 
 func (c *Client) exchange(typ string) string {
@@ -302,7 +301,7 @@ func (c *Client) Call(ctx context.Context, target string, method string, payload
 				errCh <- err
 				return
 			}
-			msgs, err = c.ch.Consume(c.resultQueue.Name, "", false, false, false, false, nil)
+			msgs, err = c.ch.Consume(c.queue.Name, "", false, false, false, false, nil)
 			if err != nil {
 				errCh <- err
 				return
@@ -364,7 +363,7 @@ func (c *Client) WaitForTask(taskID string) (string, interface{}, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	msgs, err := c.ch.Consume(c.resultQueue.Name, "", false, false, false, false, nil)
+	msgs, err := c.ch.Consume(c.queue.Name, "", false, false, false, false, nil)
 	if err != nil {
 		return "", nil, err
 	}
@@ -385,7 +384,7 @@ func (c *Client) Respond(delivery amqp.Delivery, command string, payload interfa
 
 // Close ...
 func (c *Client) Close() {
-	_, err := c.ch.QueueDelete(c.resultQueue.Name, false, false, false)
+	_, err := c.ch.QueueDelete(c.queue.Name, false, false, false)
 	if err != nil {
 		log.Warn().Err(err).Msg("Error deleting queue")
 	}
@@ -467,19 +466,27 @@ func (c *Client) setup() error {
 }
 
 func (c *Client) setupService() error {
+	if c.conn != nil {
+		return nil
+	}
 	err := c.setup()
 	if err != nil {
 		return err
 	}
-	name := c.service()
-	svc := fmt.Sprintf("xing.S.svc-%s", name)
-	c.serviceQueue, err = c.ch.QueueDeclare(svc, false, false, false, false, nil)
+	var name string
+	if c.single {
+		name = c.name
+	} else {
+		name = c.service()
+	}
+	qn := fmt.Sprintf("xing.S.svc-%s", name)
+	c.queue, err = c.ch.QueueDeclare(qn, false, false, false, false, nil)
 	if err != nil {
 		return err
 	}
 	key := fmt.Sprintf("%s.#", name)
-	log.Info().Str("queue", c.resultQueue.Name).Str("exchange", RPCExchange).Str("key", key).Msg("Subscribing")
-	err = c.ch.QueueBind(svc, key, RPCExchange, false, nil)
+	log.Info().Str("queue", c.queue.Name).Str("exchange", RPCExchange).Str("key", key).Msg("Subscribing")
+	err = c.ch.QueueBind(c.queue.Name, key, RPCExchange, false, nil)
 	if err != nil {
 		return err
 	}
@@ -491,8 +498,8 @@ func (c *Client) setupEventHandler() error {
 	if err != nil {
 		return err
 	}
-	n := fmt.Sprintf("xing.S.evh-%s", c.name)
-	c.queue, err = c.ch.QueueDeclare(n, false, false, false, false, nil)
+	qn := fmt.Sprintf("xing.S.evh-%s", c.name)
+	c.queue, err = c.ch.QueueDeclare(qn, false, false, false, false, nil)
 	if err != nil {
 		return err
 	}
@@ -517,6 +524,7 @@ func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 		watchStop:     make(chan bool),
 		retryCount:    30,
 		retryInterval: 1,
+		single:        true,
 	}
 	// default to events from own domain
 	c.interests = []string{fmt.Sprintf("%s.#", c.domain())}
@@ -532,6 +540,7 @@ func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 }
 
 // NewClient ...
+// FIXME: should restrict client name to be 3 segments
 func NewClient(name string, url string, opts ...ClientOpt) (*Client, error) {
 	c, err := bootStrap(name, url, opts...)
 	if err != nil {
@@ -542,21 +551,21 @@ func NewClient(name string, url string, opts ...ClientOpt) (*Client, error) {
 		return nil, err
 	}
 	c.typ = ProducerClient
-	qn := fmt.Sprintf("xing.C.%s.result", name)
-	c.resultQueue, err = c.ch.QueueDeclare(qn, false, false, false, false, nil)
+	qn := fmt.Sprintf("xing.C.%s.result", c.name)
+	c.queue, err = c.ch.QueueDeclare(qn, false, false, false, false, nil)
 	if err != nil {
 		return nil, err
 	}
 	key := resultTopicName(c.name)
-	log.Info().Str("queue", c.resultQueue.Name).Str("exchange", RPCExchange).Str("key", key).
+	log.Info().Str("queue", c.queue.Name).Str("exchange", RPCExchange).Str("key", key).
 		Msg("Subscribing")
-	err = c.ch.QueueBind(c.resultQueue.Name, key, RPCExchange, false, nil)
+	err = c.ch.QueueBind(c.queue.Name, key, RPCExchange, false, nil)
 	if err != nil {
 		return nil, err
 	}
-	log.Info().Str("queue", c.resultQueue.Name).Str("exchange", TaskExchange).Str("key", key).
+	log.Info().Str("queue", c.queue.Name).Str("exchange", TaskExchange).Str("key", key).
 		Msg("Subscribing")
-	err = c.ch.QueueBind(c.resultQueue.Name, key, TaskExchange, false, nil)
+	err = c.ch.QueueBind(c.queue.Name, key, TaskExchange, false, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -574,6 +583,10 @@ func NewService(name string, url string, opts ...ClientOpt) (*Client, error) {
 	if topicLength(name) != 2 && topicLength(name) != 3 {
 		return nil, fmt.Errorf("Invalid name for service: %s", name)
 	}
+	if topicLength(name) == 2 {
+		c.single = false
+	}
+
 	err = c.setupService()
 	if err != nil {
 		return nil, err
@@ -592,12 +605,12 @@ func NewTaskRunner(name string, url string, opts ...ClientOpt) (*Client, error) 
 		return nil, fmt.Errorf("invalid name for task runner: %s", name)
 	}
 	svc := fmt.Sprintf("tkr-%s", c.name)
-	c.serviceQueue, err = c.ch.QueueDeclare(svc, false, false, false, false, nil)
+	c.queue, err = c.ch.QueueDeclare(svc, false, false, false, false, nil)
 	if err != nil {
 		return nil, err
 	}
 	key := fmt.Sprintf("%s.%s.*", c.name, Task)
-	log.Info().Str("queue", c.resultQueue.Name).Str("exchange", TaskExchange).Str("key", key).
+	log.Info().Str("queue", c.queue.Name).Str("exchange", TaskExchange).Str("key", key).
 		Msg("Subscribing")
 	err = c.ch.QueueBind(svc, key, TaskExchange, false, nil)
 	if err != nil {

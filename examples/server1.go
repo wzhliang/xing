@@ -21,6 +21,11 @@ type Greeter struct{}
 
 func (g *Greeter) Hello(ctx context.Context, req *hello.HelloRequest, rsp *hello.HelloResponse) error {
 	fmt.Printf(" [*] name: %s\n", req.Name)
+	if req.Name == "鸠摩智" {
+		(*rsp).Greeting = "yo"
+	} else {
+		(*rsp).Greeting = "who are you?"
+	}
 	return nil
 }
 
@@ -30,7 +35,7 @@ func (g *Greeter) Nihao(ctx context.Context, req *hello.HelloRequest, v *hello.V
 }
 
 func main() {
-	name := fmt.Sprintf("host.agent.%s", os.Args[1])
+	name := fmt.Sprintf("game.agent.%s", os.Args[1])
 	svc, err := xing.NewService(name,
 		"amqp://guest:guest@localhost:5672/",
 		xing.SetSerializer(&xing.JSONSerializer{}),

@@ -20,7 +20,13 @@ type Greeter struct{}
 
 func (g *Greeter) Hello(ctx context.Context, req *hello.HelloRequest, rsp *hello.HelloResponse) error {
 	fmt.Printf(" [*] name: %s\n", req.Name)
-	(*rsp).Greeting = "yo"
+	if req.Name == "鸠摩智" {
+		(*rsp).Greeting = "yo"
+	} else if req.Name == "王语嫣" {
+		(*rsp).Greeting = "美女好"
+	} else {
+		(*rsp).Greeting = "陛下好"
+	}
 	return nil
 }
 
