@@ -41,6 +41,9 @@ func main() {
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
 	err_assert(err)
+	if err != nil {
+		return
+	}
 
 	hello.RegisterGreeterHandler(svc, &Greeter{})
 

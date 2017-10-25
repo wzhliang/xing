@@ -23,7 +23,7 @@ const (
 	EventHandlerClient = "event_handler"
 
 	// Defaults
-	RPCTTL = "5000"
+	RPCTTL = "1"
 
 	// Threshold
 	MinHeatbeat = 3

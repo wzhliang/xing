@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/wzhliang/xing"
@@ -28,19 +30,31 @@ func main() {
 		xing.SetIdentifier(&xing.NoneIdentifier{}),
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
+	if err != nil {
+		log.Errorf("failed to create new client")
+	}
 	target := fmt.Sprintf("game.agent.%s", os.Args[1])
 	cli := hello.NewGreeterClient(target, producer)
-	ret, err := cli.Hello(context.Background(), &hello.HelloRequest{
-		Name: "鸠摩智",
-	})
-	_assert(err)
-	_assertReturn("yo", ret.Greeting)
+
+	n, err := strconv.Atoi(os.Args[2])
 	if err != nil {
-		fmt.Printf("returned: %v\n", ret)
+		fmt.Printf("Wrong argument: %s", os.Args[2])
 	}
-	_, err = cli.Nihao(context.Background(), &hello.HelloRequest{
-		Name: "王语嫣",
-	})
-	_assert(err)
+
+	for i := 0; i < n; i++ {
+		ret, err := cli.Hello(context.Background(), &hello.HelloRequest{
+			Name: "鸠摩智",
+		})
+		_assert(err)
+		if err == nil {
+			_assertReturn("yo", ret.Greeting)
+		}
+		_, err = cli.Nihao(context.Background(), &hello.HelloRequest{
+			Name: "王语嫣",
+		})
+		_assert(err)
+
+		time.Sleep(1 * time.Second)
+	}
 	producer.Close()
 }

@@ -39,7 +39,7 @@ func main() {
 	svc, err := xing.NewService("host.server",
 		"amqp://guest:guest@localhost:5672/",
 		xing.SetSerializer(&xing.JSONSerializer{}),
-		xing.SetBrokerTimeout(5, 2),
+		xing.SetBrokerTimeout(15, 5),
 	)
 	_assert(err)
 

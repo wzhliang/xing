@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/streadway/amqp"
+	"github.com/wzhliang/xing/utils"
 )
 
 // Rules:
@@ -22,8 +23,6 @@ import (
 //     domain.name.instance.result.command
 
 // TODO:
-// - check usage of autoAck
-// - turn on exclusive for all?
 // - hide AMQP details like amqp.Delivery from interface
 // - should we do something about undelivered response?
 //   e.g. rabbitmq crashed when we're sending RPC response
@@ -232,11 +231,6 @@ func (c *Client) _send(ex string, key string, corrid string, typ string, payload
 	if typ == Command {
 		msg.Expiration = RPCTTL
 	}
-	err = c.setup()
-	if err != nil {
-		log.Error().Msg("No connection to server.")
-		return err
-	}
 
 	log.Info().Str("to", ex).Str("key", key).Str("corid", corrid).Str("type", typ).
 		Msg("Sending")
@@ -249,11 +243,9 @@ func (c *Client) send(target string, _type string, event string, payload interfa
 		c.Lock()
 		c.rpcCounter++
 		c.Unlock()
-		log.Info().Uint("counter", c.rpcCounter).Msg("send")
 		cor = c.corrid()
 	} else if _type == Task {
 		c.rpcCounter++
-		log.Info().Uint("counter", c.rpcCounter).Msg("send")
 		cor = c.taskid()
 	} else {
 		cor = "N/A"
@@ -277,6 +269,10 @@ func (c *Client) Notify(target string, event string, payload interface{}) error 
 }
 
 func (c *Client) newChannel() error {
+	err := c.setup()
+	if err != nil {
+		return err
+	}
 	c.Lock()
 	c.ch.Close()
 	ch, err := c.conn.Channel()
@@ -296,17 +292,20 @@ func (c *Client) Call(ctx context.Context, target string, method string, payload
 		var err error
 		var msgs <-chan amqp.Delivery
 		if sync {
-			err := c.newChannel() // FIXME: ugly hack
+			err = c.newChannel()
 			if err != nil {
 				errCh <- err
 				return
 			}
-			msgs, err = c.ch.Consume(c.queue.Name, "", false, false, false, false, nil)
-			if err != nil {
-				errCh <- err
-				return
-			}
-			err = c.ch.Qos(1, 0, false)
+			msgs, err = c.ch.Consume(
+				c.queue.Name, // queue
+				"",           // consumer
+				true,         // autoack
+				c.single,     // exclusive
+				false,        // noLocal
+				false,        // noWait
+				nil,
+			)
 			if err != nil {
 				errCh <- err
 				return
@@ -320,7 +319,6 @@ func (c *Client) Call(ctx context.Context, target string, method string, payload
 		if sync {
 			for m := range msgs {
 				if c.corrid() == m.CorrelationId {
-					m.Ack(false)
 					msgCh <- m
 					return
 				}
@@ -437,6 +435,9 @@ func (c *Client) setup() error {
 	c.conn = conn
 	c.Unlock()
 
+	if c.ch != nil {
+		c.ch.Close()
+	}
 	ch, err := c.conn.Channel()
 	if err != nil {
 		log.Error().Msgf("creating channel failed: %v", err)
@@ -446,22 +447,91 @@ func (c *Client) setup() error {
 	c.ch = ch
 	c.Unlock()
 
-	err = ch.ExchangeDeclare(EventExchange, "topic", true, true, false, false, nil)
+	err = ch.ExchangeDeclare(
+		EventExchange, // name
+		"topic",       // kind
+		true,          // durable
+		false,         // autodelete
+		false,         // internal
+		false,         // noWait
+		nil,
+	)
 	if err != nil {
 		return err
 	}
 
-	err = ch.ExchangeDeclare(RPCExchange, "topic", true, true, false, false, nil)
+	err = ch.ExchangeDeclare(
+		RPCExchange, // name
+		"topic",     // kind
+		true,        // durable
+		false,       // autodelete
+		false,       // internal
+		false,       // noWait
+		nil,
+	)
 	if err != nil {
 		return err
 	}
 
-	err = ch.ExchangeDeclare(TaskExchange, "topic", true, true, false, false, nil)
+	err = ch.ExchangeDeclare(
+		TaskExchange, // name
+		"topic",      // kind
+		true,         // durable
+		false,        // autodelete
+		false,        // internal
+		false,        // noWait
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+	err = ch.Qos(1, 0, false)
 	if err != nil {
 		return err
 	}
 
 	go c.watch()
+	return nil
+}
+
+func (c *Client) setupClient() error {
+	if c.conn != nil {
+		log.Info().Msg("nothing to do")
+		return nil
+	}
+	err := c.setup()
+	if err != nil {
+		log.Info().Msg("setup failed")
+		return err
+	}
+	qn := fmt.Sprintf("xing.C.%s.result", c.name)
+	c.queue, err = c.ch.QueueDeclare(
+		qn,    // name
+		true,  // durable
+		false, // autoDelete
+		false, // exclusive
+		false, // noWait
+		nil,   // args
+	)
+	if err != nil {
+		log.Info().Msg("setup failed")
+		return err
+	}
+	key := resultTopicName(c.name)
+	log.Info().Str("queue", c.queue.Name).Str("exchange", RPCExchange).Str("key", key).
+		Msg("Subscribing")
+	err = c.ch.QueueBind(c.queue.Name, key, RPCExchange, false, nil)
+	if err != nil {
+		log.Info().Msg("setup failed")
+		return err
+	}
+	log.Info().Str("queue", c.queue.Name).Str("exchange", TaskExchange).Str("key", key).
+		Msg("Subscribing")
+	err = c.ch.QueueBind(c.queue.Name, key, TaskExchange, false, nil)
+	if err != nil {
+		log.Info().Msg("setup failed")
+		return err
+	}
 	return nil
 }
 
@@ -480,7 +550,14 @@ func (c *Client) setupService() error {
 		name = c.service()
 	}
 	qn := fmt.Sprintf("xing.S.svc-%s", name)
-	c.queue, err = c.ch.QueueDeclare(qn, false, false, false, false, nil)
+	c.queue, err = c.ch.QueueDeclare(
+		qn,    // name
+		true,  // durable
+		false, // autoDelete
+		false, // exclusive
+		false, // noWait
+		nil,   // args
+	)
 	if err != nil {
 		return err
 	}
@@ -499,7 +576,14 @@ func (c *Client) setupEventHandler() error {
 		return err
 	}
 	qn := fmt.Sprintf("xing.S.evh-%s", c.name)
-	c.queue, err = c.ch.QueueDeclare(qn, false, false, false, false, nil)
+	c.queue, err = c.ch.QueueDeclare(
+		qn,    // name
+		true,  // durable
+		false, // autoDelete
+		false, // exclusive
+		false, // noWait
+		nil,
+	)
 	if err != nil {
 		return err
 	}
@@ -524,6 +608,7 @@ func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 		watchStop:     make(chan bool),
 		retryCount:    30,
 		retryInterval: 1,
+		rpcCounter:    uint(utils.Random(1000, 9999)),
 		single:        true,
 	}
 	// default to events from own domain
@@ -546,26 +631,8 @@ func NewClient(name string, url string, opts ...ClientOpt) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = c.setup()
-	if err != nil {
-		return nil, err
-	}
 	c.typ = ProducerClient
-	qn := fmt.Sprintf("xing.C.%s.result", c.name)
-	c.queue, err = c.ch.QueueDeclare(qn, false, false, false, false, nil)
-	if err != nil {
-		return nil, err
-	}
-	key := resultTopicName(c.name)
-	log.Info().Str("queue", c.queue.Name).Str("exchange", RPCExchange).Str("key", key).
-		Msg("Subscribing")
-	err = c.ch.QueueBind(c.queue.Name, key, RPCExchange, false, nil)
-	if err != nil {
-		return nil, err
-	}
-	log.Info().Str("queue", c.queue.Name).Str("exchange", TaskExchange).Str("key", key).
-		Msg("Subscribing")
-	err = c.ch.QueueBind(c.queue.Name, key, TaskExchange, false, nil)
+	err = c.setupClient()
 	if err != nil {
 		return nil, err
 	}
@@ -660,13 +727,15 @@ func (c *Client) _run() error {
 		return fmt.Errorf("unable to connect to server")
 	}
 	log.Info().Str("type", c.typ).Msg("server")
-	autoAck := false // FIXME!!!
-	err = c.ch.Qos(1, 0, false)
-	if err != nil {
-		log.Error().Msgf("failed to set QOS for channel: %v", err)
-		return err
-	}
-	msgs, err := c.ch.Consume(c.queue.Name, c.name, autoAck, false, false, false, nil)
+	msgs, err := c.ch.Consume(
+		c.queue.Name, // queue
+		c.name,       // consumer
+		true,         // autoAck,
+		c.single,     // exclusive
+		false,        // noLocal
+		false,        // noWait
+		nil,
+	)
 	if err != nil {
 		log.Error().Msgf("consume failed: %v", err)
 		return err
@@ -706,7 +775,6 @@ func (c *Client) _run() error {
 				return err
 			}
 		}
-		d.Ack(false)
 	}
 
 	return nil
@@ -715,9 +783,15 @@ func (c *Client) _run() error {
 // Run ...
 func (c *Client) Run() error {
 	var err error
-	for retry := c.retryCount; retry >= 0; retry-- {
+	retry := c.retryCount
+	for retry > 0 {
 		log.Info().Msg("starting server...")
 		err = c._run()
+		if err == nil {
+			retry = c.retryCount
+		} else {
+			retry--
+		}
 		time.Sleep(time.Duration(c.retryInterval) * time.Second)
 	}
 	return err

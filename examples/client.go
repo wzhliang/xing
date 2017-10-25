@@ -2,22 +2,25 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strconv"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"github.com/wzhliang/xing"
 	"github.com/wzhliang/xing/examples/hello"
 )
 
 func _assert(err error) {
 	if err != nil {
-		log.Errorf("Client: %v", err)
+		log.Error().Msgf("Client: %v", err)
 	}
 }
 
 func _assertReturn(req, resp string) {
 	if req != resp {
-		log.Errorf("Client: %s != %s", req, resp)
+		log.Error().Msgf("Client: %s != %s", req, resp)
 	}
 }
 
@@ -27,35 +30,57 @@ func main() {
 		xing.SetIdentifier(&xing.NoneIdentifier{}),
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5000*time.Millisecond)
-	defer cancel()
+	if err != nil {
+		log.Error().Msg("failed to create new client")
+		return
+	}
 
 	cli := hello.NewGreeterClient("host.server", producer)
-	ret, err := cli.Hello(ctx, &hello.HelloRequest{
-		Name: "鸠摩智",
-	})
-	_assert(err)
-	if err == nil {
-		_assertReturn("yo", ret.Greeting)
+	n, err := strconv.Atoi(os.Args[1])
+	if err != nil {
+		fmt.Printf("Wrong argument: %s", os.Args[1])
 	}
-	_, err = cli.Nihao(ctx, &hello.HelloRequest{
-		Name: "王语嫣",
-	})
-	_assert(err)
-	ret, err = cli.Hello(ctx, &hello.HelloRequest{
-		Name: "王语嫣",
-	})
-	_assert(err)
-	if err == nil {
-		_assertReturn("美女好", ret.Greeting)
+
+	for i := 0; i < n; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 5000*time.Millisecond)
+		ret, err := cli.Hello(ctx, &hello.HelloRequest{
+			Name: "鸠摩智",
+		})
+		_assert(err)
+		if err == nil {
+			_assertReturn("yo", ret.Greeting)
+		}
+		cancel()
+
+		ctx, cancel = context.WithTimeout(context.Background(), 5000*time.Millisecond)
+		_, err = cli.Nihao(ctx, &hello.HelloRequest{
+			Name: "虚竹",
+		})
+		_assert(err)
+		cancel()
+
+		ctx, cancel = context.WithTimeout(context.Background(), 5000*time.Millisecond)
+		ret, err = cli.Hello(ctx, &hello.HelloRequest{
+			Name: "王语嫣",
+		})
+		_assert(err)
+		if err == nil {
+			_assertReturn("美女好", ret.Greeting)
+		}
+		cancel()
+
+		ctx, cancel = context.WithTimeout(context.Background(), 5000*time.Millisecond)
+		ret, err = cli.Hello(ctx, &hello.HelloRequest{
+			Name: "段誉",
+		})
+		_assert(err)
+		if err == nil {
+			_assertReturn("陛下好", ret.Greeting)
+		}
+		cancel()
+
+		time.Sleep(1 * time.Second)
 	}
-	ret, err = cli.Hello(ctx, &hello.HelloRequest{
-		Name: "段誉",
-	})
-	_assert(err)
-	if err == nil {
-		_assertReturn("陛下好", ret.Greeting)
-	}
+
 	producer.Close()
 }

@@ -18,6 +18,9 @@ func main() {
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
 	_assert(err)
+	if err != nil {
+		return
+	}
 	err = producer.Notify("ingress.agent", "Greeter::Nihao", &hello.HelloRequest{Name: "Jack"})
 	_assert(err)
 	err = producer.Notify("confcenter.nogo", "Greeter::Nihao", &hello.HelloRequest{Name: "XXXX"})
