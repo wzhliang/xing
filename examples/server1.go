@@ -35,9 +35,13 @@ func (g *Greeter) Nihao(ctx context.Context, req *hello.HelloRequest, v *hello.V
 }
 
 func main() {
-	name := fmt.Sprintf("game.agent.%s", os.Args[1])
+	mq := os.Getenv("RABBITMQ")
+	if mq == "" {
+		mq = "amqp://guest:guest@localhost:5672/"
+	}
+	name := fmt.Sprintf("game.agent.%s", "xyz")
 	svc, err := xing.NewService(name,
-		"amqp://guest:guest@localhost:5672/",
+		mq,
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
 	err_assert(err)

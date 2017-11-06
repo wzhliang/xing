@@ -26,8 +26,12 @@ func _assertReturn(req, resp string) {
 
 func main() {
 	url := "amqp://guest:guest@localhost:5672/"
-	producer, err := xing.NewClient("orchestration.controller", url,
-		xing.SetIdentifier(&xing.NoneIdentifier{}),
+	mq := os.Getenv("RABBITMQ")
+	if mq == "" {
+		mq = url
+	}
+	producer, err := xing.NewClient("orchestration.controller", mq,
+		xing.SetIdentifier(&xing.RandomIdentifier{}),
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
 	if err != nil {
@@ -82,5 +86,4 @@ func main() {
 		time.Sleep(1 * time.Second)
 	}
 
-	producer.Close()
 }

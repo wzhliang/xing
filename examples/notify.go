@@ -1,6 +1,11 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"strconv"
+	"time"
+
 	log "github.com/sirupsen/logrus"
 	"github.com/wzhliang/xing"
 	"github.com/wzhliang/xing/examples/hello"
@@ -13,7 +18,11 @@ func _assert(err error) {
 }
 
 func main() {
-	producer, err := xing.NewClient("ingress.controller", "amqp://guest:guest@localhost:5672/",
+	mq := os.Getenv("RABBITMQ")
+	if mq == "" {
+		mq = "amqp://guest:guest@localhost:5672/"
+	}
+	producer, err := xing.NewClient("ingress.controller", mq,
 		xing.SetIdentifier(&xing.RandomIdentifier{}),
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
@@ -21,11 +30,14 @@ func main() {
 	if err != nil {
 		return
 	}
-	err = producer.Notify("ingress.agent", "Greeter::Nihao", &hello.HelloRequest{Name: "Jack"})
-	_assert(err)
-	err = producer.Notify("confcenter.nogo", "Greeter::Nihao", &hello.HelloRequest{Name: "XXXX"})
-	_assert(err)
-	err = producer.Notify("confcenter.api", "Greeter::Nihao", &hello.HelloRequest{Name: "Tom"})
-	_assert(err)
+	n, err := strconv.Atoi(os.Args[1])
+	if err != nil {
+		fmt.Printf("Wrong argument: %s", os.Args[1])
+	}
+	for i := 0; i < n; i++ {
+		err = producer.Notify("ingress.foobar", "Greeter::Nihao", &hello.HelloRequest{Name: "Jack"})
+		_assert(err)
+		time.Sleep(1 * time.Second)
+	}
 	producer.Close()
 }

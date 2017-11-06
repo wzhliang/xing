@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"context"
 
@@ -36,8 +37,12 @@ func (g *Greeter) Nihao(ctx context.Context, req *hello.HelloRequest, v *hello.V
 }
 
 func main() {
+	mq := os.Getenv("RABBITMQ")
+	if mq == "" {
+		mq = "amqp://guest:guest@localhost:5672/"
+	}
 	svc, err := xing.NewService("host.server",
-		"amqp://guest:guest@localhost:5672/",
+		mq,
 		xing.SetSerializer(&xing.JSONSerializer{}),
 		xing.SetBrokerTimeout(15, 5),
 	)
