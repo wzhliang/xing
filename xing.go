@@ -95,8 +95,9 @@ type Client struct {
 	name          string
 	url           string
 	conn          *amqp.Connection
-	ch            *amqp.Channel
-	queue         amqp.Queue // queue for consumption, for RPC client, it holds results
+	ch            *amqp.Channel // incoming channel
+	sch           *amqp.Channel // outgoing channel
+	queue         amqp.Queue    // queue for consumption, for RPC client, it holds results
 	tlsConfig     *tls.Config
 	serializer    Serializer
 	identifier    Identifier
@@ -232,9 +233,13 @@ func (c *Client) _send(ex string, key string, corrid string, typ string, payload
 		msg.Expiration = RPCTTL
 	}
 
+	err = c.newSendChannel()
+	if err != nil {
+		return err
+	}
 	log.Info().Str("to", ex).Str("key", key).Str("corid", corrid).Str("type", typ).
 		Msg("Sending")
-	return c.ch.Publish(ex, key, false, false, msg)
+	return c.sch.Publish(ex, key, false, false, msg)
 }
 
 func (c *Client) send(target string, _type string, event string, payload interface{}) error {
@@ -268,14 +273,35 @@ func (c *Client) Notify(target string, event string, payload interface{}) error 
 	return c.send(target, Event, event, payload)
 }
 
+func (c *Client) newSendChannel() error {
+	err := c.setup()
+	if err != nil {
+		return err
+	}
+	if c.sch != nil {
+		return nil
+	}
+	c.sch.Close()
+	ch, err := c.conn.Channel()
+	c.Lock()
+	c.sch = ch
+	c.Unlock()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *Client) newChannel() error {
 	err := c.setup()
 	if err != nil {
 		return err
 	}
-	c.Lock()
-	c.ch.Close()
 	ch, err := c.conn.Channel()
+	c.Lock()
+	if c.ch != nil {
+		c.ch.Close()
+	}
 	c.ch = ch
 	c.Unlock()
 	if err != nil {
@@ -408,6 +434,8 @@ func (c *Client) watch() {
 			log.Warn().Err(err).Msg("Connection lost")
 			c.Lock()
 			c.conn = nil
+			c.sch = nil
+			c.ch = nil
 			c.Unlock()
 			return
 		case stop := <-c.watchStop:
@@ -445,6 +473,15 @@ func (c *Client) setup() error {
 	}
 	c.Lock()
 	c.ch = ch
+	c.Unlock()
+
+	ch, err = c.conn.Channel()
+	if err != nil {
+		log.Error().Msgf("creating channel failed: %v", err)
+		return err
+	}
+	c.Lock()
+	c.sch = ch
 	c.Unlock()
 
 	err = ch.ExchangeDeclare(
