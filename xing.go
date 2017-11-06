@@ -229,9 +229,6 @@ func (c *Client) _send(ex string, key string, corrid string, typ string, payload
 		CorrelationId: corrid,
 		Body:          []byte(pl),
 	}
-	if typ == Command {
-		msg.Expiration = RPCTTL
-	}
 
 	err = c.newSendChannel()
 	if err != nil {
@@ -555,7 +552,8 @@ func (c *Client) setupClient() error {
 		false, // exclusive
 		false, // noWait
 		amqp.Table{
-			"x-expires": ResultQueueTTL,
+			"x-expires":     ResultQueueTTL,
+			"x-message-ttl": RPCTTL,
 		}, // args
 	)
 	if err != nil {
@@ -602,7 +600,8 @@ func (c *Client) setupService() error {
 		false, // exclusive
 		false, // noWait
 		amqp.Table{
-			"x-expires": QueueTTL,
+			"x-expires":     QueueTTL,
+			"x-message-ttl": RPCTTL,
 		}, // args
 	)
 	if err != nil {

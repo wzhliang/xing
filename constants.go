@@ -23,7 +23,7 @@ const (
 	EventHandlerClient = "event_handler"
 
 	// Defaults
-	RPCTTL         = "1"
+	RPCTTL         = int64(1)
 	ResultQueueTTL = int64(10 * 60 * 1000)      // 10 minutes
 	QueueTTL       = int64(24 * 60 * 60 * 1000) // a day
 
