@@ -408,11 +408,17 @@ func (c *Client) Respond(delivery amqp.Delivery, command string, payload interfa
 
 // Close ...
 func (c *Client) Close() {
-	_, err := c.ch.QueueDelete(c.queue.Name, false, false, false)
-	if err != nil {
-		log.Warn().Err(err).Msg("Error deleting queue")
+	if c.conn == nil {
+		log.Warn().Msg("connection closed already")
+		return
 	}
 	c.stopWatch()
+	if c.ch != nil {
+		_, err := c.ch.QueueDelete(c.queue.Name, false, false, false)
+		if err != nil {
+			log.Warn().Err(err).Msg("Error deleting queue")
+		}
+	}
 	c.conn.Close()
 }
 
@@ -538,7 +544,7 @@ func (c *Client) setupClient() error {
 	}
 	err := c.setup()
 	if err != nil {
-		log.Info().Msg("setup failed")
+		log.Error().Err(err).Msg("setup failed")
 		return err
 	}
 	qn := fmt.Sprintf("xing.C.%s.result", c.name)
@@ -548,10 +554,12 @@ func (c *Client) setupClient() error {
 		false, // autoDelete
 		false, // exclusive
 		false, // noWait
-		nil,   // args
+		amqp.Table{
+			"x-expires": ResultQueueTTL,
+		}, // args
 	)
 	if err != nil {
-		log.Info().Msg("setup failed")
+		log.Error().Err(err).Msg("setup failed")
 		return err
 	}
 	key := resultTopicName(c.name)
@@ -559,14 +567,14 @@ func (c *Client) setupClient() error {
 		Msg("Subscribing")
 	err = c.ch.QueueBind(c.queue.Name, key, RPCExchange, false, nil)
 	if err != nil {
-		log.Info().Msg("setup failed")
+		log.Error().Err(err).Msg("setup failed")
 		return err
 	}
 	log.Info().Str("queue", c.queue.Name).Str("exchange", TaskExchange).Str("key", key).
 		Msg("Subscribing")
 	err = c.ch.QueueBind(c.queue.Name, key, TaskExchange, false, nil)
 	if err != nil {
-		log.Info().Msg("setup failed")
+		log.Error().Err(err).Msg("setup failed")
 		return err
 	}
 	return nil
@@ -593,7 +601,9 @@ func (c *Client) setupService() error {
 		false, // autoDelete
 		false, // exclusive
 		false, // noWait
-		nil,   // args
+		amqp.Table{
+			"x-expires": QueueTTL,
+		}, // args
 	)
 	if err != nil {
 		return err
@@ -619,7 +629,9 @@ func (c *Client) setupEventHandler() error {
 		false, // autoDelete
 		false, // exclusive
 		false, // noWait
-		nil,
+		amqp.Table{
+			"x-expires": QueueTTL,
+		}, // args
 	)
 	if err != nil {
 		return err
