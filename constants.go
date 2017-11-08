@@ -24,8 +24,9 @@ const (
 
 	// Defaults
 	RPCTTL         = int64(1)
-	ResultQueueTTL = int64(10 * 60 * 1000)      // 10 minutes
-	QueueTTL       = int64(24 * 60 * 60 * 1000) // a day
+	EVTTTL         = int64(15 * 60 * 1000)     // 10 minutes
+	ResultQueueTTL = int64(10 * 60 * 1000)     // 10 minutes
+	QueueTTL       = int64(3 * 60 * 60 * 1000) // 3 hours
 
 	// Threshold
 	MinHeatbeat = 3

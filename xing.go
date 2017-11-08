@@ -629,7 +629,8 @@ func (c *Client) setupEventHandler() error {
 		false, // exclusive
 		false, // noWait
 		amqp.Table{
-			"x-expires": QueueTTL,
+			"x-expires":     QueueTTL,
+			"x-message-ttl": EVTTTL,
 		}, // args
 	)
 	if err != nil {
