@@ -1,0 +1,122 @@
+tosca_definitions_version: tosca_simple_yaml_1_0
+imports:
+  - docker-types.yml
+topology_template:
+  node_templates:
+    server:
+      properties:
+        image: 'hub.c.163.com/borlandc/xing-server:latest'
+        job_type: stateless
+        privileged: false
+        environment:
+          RABBITMQ: "amqp://guest:guest@192.168.1.191:5672/"
+      type: tosca.nodes.Container.Application.DockerContainer
+    server1:
+      properties:
+        image: 'hub.c.163.com/borlandc/xing-server1:latest'
+        job_type: stateless
+        privileged: false
+        environment:
+          RABBITMQ: "amqp://guest:guest@192.168.1.191:5672/"
+      type: tosca.nodes.Container.Application.DockerContainer
+    client1:
+      properties:
+        image: 'hub.c.163.com/borlandc/xing-client1:latest'
+        job_type: stateless
+        privileged: false
+        environment:
+          RABBITMQ: "amqp://guest:guest@192.168.1.191:5672/"
+      type: tosca.nodes.Container.Application.DockerContainer
+    client:
+      properties:
+        image: 'hub.c.163.com/borlandc/xing-client:latest'
+        job_type: stateless
+        privileged: false
+        environment:
+          RABBITMQ: "amqp://guest:guest@192.168.1.191:5672/"
+      type: tosca.nodes.Container.Application.DockerContainer
+    noreply:
+      properties:
+        image: 'hub.c.163.com/borlandc/xing-noreply:latest'
+        job_type: stateless
+        privileged: false
+        environment:
+          RABBITMQ: "amqp://guest:guest@192.168.1.191:5672/"
+      type: tosca.nodes.Container.Application.DockerContainer
+    evtserver:
+      properties:
+        image: 'hub.c.163.com/borlandc/xing-evt-server:latest'
+        job_type: stateless
+        privileged: false
+        environment:
+          RABBITMQ: "amqp://guest:guest@192.168.1.191:5672/"
+      type: tosca.nodes.Container.Application.DockerContainer
+    notify:
+      properties:
+        image: 'hub.c.163.com/borlandc/xing-notify:latest'
+        job_type: stateless
+        privileged: false
+        environment:
+          RABBITMQ: "amqp://guest:guest@192.168.1.191:5672/"
+      type: tosca.nodes.Container.Application.DockerContainer
+  inputs:
+    stack_name:
+      type: string
+      default: ''
+      description: '{"type": "system", "service": "N/A", "data": {}, "system": true}'
+    kubernetes.configmap.resolv.conf:
+      type: string
+      default: ''
+      description: >-
+        {"type": "config", "service": "N/A", "data": {"path":
+        "/etc/resolv.conf"}, "system": true}
+  policies:
+    - server_scaling:
+        type: wise2c.policies.Scaling
+        targets:
+          - server
+        properties:
+          default_instances: 3
+          enable: false
+        triggers: {}
+    - server1_scaling:
+        type: wise2c.policies.Scaling
+        targets:
+          - server1
+        properties:
+          default_instances: 1
+          enable: false
+        triggers: {}
+    - client1_scaling:
+        type: wise2c.policies.Scaling
+        targets:
+          - client1
+        properties:
+          default_instances: 1
+          enable: false
+        triggers: {}
+    - client_scaling:
+        type: wise2c.policies.Scaling
+        targets:
+          - client
+        properties:
+          default_instances: 1
+          enable: false
+        triggers: {}
+    - evtserver_scaling:
+        type: wise2c.policies.Scaling
+        targets:
+          - evtserver
+        properties:
+          default_instances: 1
+          enable: false
+        triggers: {}
+    - notify_scaling:
+        type: wise2c.policies.Scaling
+        targets:
+          - notify
+        properties:
+          default_instances: 1
+          enable: false
+        triggers: {}
+

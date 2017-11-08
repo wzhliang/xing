@@ -1,0 +1,8 @@
+FROM alpine
+
+COPY {{APP}} /root
+
+WORKDIR  /root
+RUN chmod a+x {{APP}}
+
+ENTRYPOINT ["/root/{{APP}}", "{{N}}"]
