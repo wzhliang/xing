@@ -44,6 +44,7 @@ func main() {
 	consumer, err := xing.NewEventHandler(
 		"ingress.agent", mq,
 		xing.SetIdentifier(&xing.RandomIdentifier{}),
+		xing.SetInterets("ingress.#"),
 		xing.SetInterets("confcenter.api.#"),
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)

@@ -659,8 +659,6 @@ func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 		rpcCounter:    uint(utils.Random(1000, 9999)),
 		single:        true,
 	}
-	// default to events from own domain
-	c.interests = []string{fmt.Sprintf("%s.#", c.domain())}
 	// handle options
 	for _, o := range opts {
 		o(c)
