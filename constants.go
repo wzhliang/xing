@@ -5,7 +5,6 @@ const (
 	// Type
 	Command = "command"
 	Event   = "event"
-	Task    = "task"
 	Result  = "result"
 
 	// Event
@@ -13,13 +12,11 @@ const (
 
 	// Exchanges
 	RPCExchange   = "xing.rpc"
-	TaskExchange  = "xing.tasks"
 	EventExchange = "xing.event"
 
 	// Client Types
 	ProducerClient     = "producer"
 	ServiceClient      = "service"
-	TaskRunnerClient   = "task_runner"
 	EventHandlerClient = "event_handler"
 
 	// Defaults

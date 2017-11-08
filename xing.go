@@ -119,8 +119,6 @@ type Client struct {
 func (c *Client) exchange(typ string) string {
 	if typ == Event {
 		return EventExchange
-	} else if typ == Task {
-		return TaskExchange
 	}
 	return RPCExchange
 }
@@ -155,12 +153,8 @@ func (c *Client) corrid() string {
 	return fmt.Sprintf("rpc-%s-%d", c.name, c.rpcCounter)
 }
 
-func (c *Client) taskid() string {
-	return fmt.Sprintf("tsk-%s-%d", c.name, c.rpcCounter)
-}
-
 func (c *Client) isConsumer() bool {
-	return c.typ == ServiceClient || c.typ == TaskRunnerClient || c.typ == EventHandlerClient
+	return c.typ == ServiceClient || c.typ == EventHandlerClient
 }
 
 func (c *Client) isService() bool {
@@ -246,9 +240,6 @@ func (c *Client) send(target string, _type string, event string, payload interfa
 		c.rpcCounter++
 		c.Unlock()
 		cor = c.corrid()
-	} else if _type == Task {
-		c.rpcCounter++
-		cor = c.taskid()
 	} else {
 		cor = "N/A"
 	}
@@ -365,39 +356,7 @@ func (c *Client) Call(ctx context.Context, target string, method string, payload
 	}
 }
 
-// RunTask called by producer to start a task
-func (c *Client) RunTask(target string, method string, payload interface{}) (string, error) {
-	if topicLength(target) != 3 {
-		return "", fmt.Errorf("invalid target: %s", target)
-	}
-	err := c.send(target, Task, method, payload)
-	if err != nil {
-		return "", err
-	}
-
-	return c.taskid(), nil
-}
-
-// WaitForTask ...
-func (c *Client) WaitForTask(taskID string) (string, interface{}, error) {
-	err := c.newChannel() // FIXME: ugly hack
-	if err != nil {
-		return "", nil, err
-	}
-	msgs, err := c.ch.Consume(c.queue.Name, "", false, false, false, false, nil)
-	if err != nil {
-		return "", nil, err
-	}
-	for m := range msgs {
-		if taskID == m.CorrelationId {
-			m.Ack(false)
-			return c.toResult(&m)
-		}
-	}
-	return "", nil, fmt.Errorf("wtf?")
-}
-
-// Respond called by RPC server or task runner
+// Respond called by RPC server
 func (c *Client) Respond(delivery amqp.Delivery, command string, payload interface{}) error {
 	key := fmt.Sprintf("%s.%s.%s", delivery.ReplyTo, Result, command)
 	return c._send(delivery.Exchange, key, delivery.CorrelationId, command, payload)
@@ -513,18 +472,6 @@ func (c *Client) setup() error {
 		return err
 	}
 
-	err = ch.ExchangeDeclare(
-		TaskExchange, // name
-		"topic",      // kind
-		true,         // durable
-		false,        // autodelete
-		false,        // internal
-		false,        // noWait
-		nil,
-	)
-	if err != nil {
-		return err
-	}
 	err = ch.Qos(1, 0, false)
 	if err != nil {
 		return err
@@ -564,13 +511,6 @@ func (c *Client) setupClient() error {
 	log.Info().Str("queue", c.queue.Name).Str("exchange", RPCExchange).Str("key", key).
 		Msg("Subscribing")
 	err = c.ch.QueueBind(c.queue.Name, key, RPCExchange, false, nil)
-	if err != nil {
-		log.Error().Err(err).Msg("setup failed")
-		return err
-	}
-	log.Info().Str("queue", c.queue.Name).Str("exchange", TaskExchange).Str("key", key).
-		Msg("Subscribing")
-	err = c.ch.QueueBind(c.queue.Name, key, TaskExchange, false, nil)
 	if err != nil {
 		log.Error().Err(err).Msg("setup failed")
 		return err
@@ -702,31 +642,6 @@ func NewService(name string, url string, opts ...ClientOpt) (*Client, error) {
 	}
 
 	err = c.setupService()
-	if err != nil {
-		return nil, err
-	}
-	return c, err
-}
-
-// NewTaskRunner ...
-func NewTaskRunner(name string, url string, opts ...ClientOpt) (*Client, error) {
-	c, err := bootStrap(name, url, opts...)
-	if err != nil {
-		return nil, err
-	}
-	c.typ = TaskRunnerClient
-	if topicLength(name) != 3 {
-		return nil, fmt.Errorf("invalid name for task runner: %s", name)
-	}
-	svc := fmt.Sprintf("tkr-%s", c.name)
-	c.queue, err = c.ch.QueueDeclare(svc, false, false, false, false, nil)
-	if err != nil {
-		return nil, err
-	}
-	key := fmt.Sprintf("%s.%s.*", c.name, Task)
-	log.Info().Str("queue", c.queue.Name).Str("exchange", TaskExchange).Str("key", key).
-		Msg("Subscribing")
-	err = c.ch.QueueBind(svc, key, TaskExchange, false, nil)
 	if err != nil {
 		return nil, err
 	}
