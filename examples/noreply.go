@@ -30,7 +30,7 @@ func main() {
 	if mq == "" {
 		mq = url
 	}
-	producer, err := xing.NewClient("orchestration.controller", url,
+	producer, err := xing.NewClient("orchestration.controller", mq,
 		xing.SetIdentifier(&xing.NoneIdentifier{}),
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
