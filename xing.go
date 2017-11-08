@@ -30,14 +30,14 @@ import (
 // ClientOpt ...
 type ClientOpt func(*Client)
 
-// SetSerializer ...
+// SetSerializer sets data serializer. Default is protobuf.
 func SetSerializer(ser Serializer) ClientOpt {
 	return func(c *Client) {
 		c.serializer = ser
 	}
 }
 
-// SetIdentifier ...
+// SetIdentifier sets identifer of the instance. Default is random string
 func SetIdentifier(id Identifier) ClientOpt {
 	return func(c *Client) {
 		c.identifier = id
@@ -45,7 +45,7 @@ func SetIdentifier(id Identifier) ClientOpt {
 	}
 }
 
-// SetInterets ...
+// SetInterets subscribes to events. Must be called for event handler.
 func SetInterets(topic ...string) ClientOpt {
 	return func(c *Client) {
 		for _, t := range topic {
@@ -54,7 +54,7 @@ func SetInterets(topic ...string) ClientOpt {
 	}
 }
 
-// SetTLSConfig ...
+// SetTLSConfig configures TLS connection to a server.
 func SetTLSConfig(cfg *tls.Config) ClientOpt {
 	return func(c *Client) {
 		c.tlsConfig = cfg
@@ -89,7 +89,7 @@ func resultTopicName(who string) string {
 	return fmt.Sprintf("%s.result.*", who)
 }
 
-// Client ...
+// Client is a wrapper struct for amqp client.
 type Client struct {
 	sync.Mutex
 	name          string
@@ -161,7 +161,7 @@ func (c *Client) isService() bool {
 	return c.typ == ServiceClient
 }
 
-// Register ...
+// Register starts periodic registration to a database such as etcd or consul.
 func (c *Client) Register(address string, port int, tags map[string]string, ttl time.Duration) error {
 	if c.registrator == nil || c.checker == nil {
 		log.Warn().Msg("Need registrator and healthchecker to register.")
@@ -256,7 +256,7 @@ func (c *Client) send(target string, _type string, event string, payload interfa
 	return c._send(ex, key, cor, event, payload)
 }
 
-// Notify ...
+// Notify sends an event.
 func (c *Client) Notify(target string, event string, payload interface{}) error {
 	return c.send(target, Event, event, payload)
 }
@@ -298,7 +298,7 @@ func (c *Client) newChannel() error {
 	return nil
 }
 
-// Call ...
+// Call invokes an remote method. Should not be called externally.
 func (c *Client) Call(ctx context.Context, target string, method string, payload interface{}, sync bool) (string, interface{}, error) {
 	errCh := make(chan error, 1)
 	msgCh := make(chan amqp.Delivery, 1)
@@ -356,13 +356,13 @@ func (c *Client) Call(ctx context.Context, target string, method string, payload
 	}
 }
 
-// Respond called by RPC server
+// Respond called by RPC server. Should not be called externally.
 func (c *Client) Respond(delivery amqp.Delivery, command string, payload interface{}) error {
 	key := fmt.Sprintf("%s.%s.%s", delivery.ReplyTo, Result, command)
 	return c._send(delivery.Exchange, key, delivery.CorrelationId, command, payload)
 }
 
-// Close ...
+// Close shuts down a client or server.
 func (c *Client) Close() {
 	if c.conn == nil {
 		log.Warn().Msg("connection closed already")
@@ -611,7 +611,7 @@ func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 	return c, nil
 }
 
-// NewClient ...
+// NewClient creates a RPC/event client.
 // FIXME: should restrict client name to be 3 segments
 func NewClient(name string, url string, opts ...ClientOpt) (*Client, error) {
 	c, err := bootStrap(name, url, opts...)
@@ -626,7 +626,8 @@ func NewClient(name string, url string, opts ...ClientOpt) (*Client, error) {
 	return c, nil
 }
 
-// NewService ...
+// NewService creates a RPC service. If the name has only 2 segments, different
+// service instances are balanced.
 func NewService(name string, url string, opts ...ClientOpt) (*Client, error) {
 	c, err := bootStrap(name, url, opts...)
 	if err != nil {
@@ -648,7 +649,7 @@ func NewService(name string, url string, opts ...ClientOpt) (*Client, error) {
 	return c, err
 }
 
-// NewEventHandler ...
+// NewEventHandler creates a new event handler.
 func NewEventHandler(name string, url string, opts ...ClientOpt) (*Client, error) {
 	c, err := bootStrap(name, url, opts...)
 	if err != nil {
@@ -663,7 +664,7 @@ func NewEventHandler(name string, url string, opts ...ClientOpt) (*Client, error
 	return c, err
 }
 
-// NewHandler ...
+// NewHandler registers handler of protocol. Called from generated code.
 func (c *Client) NewHandler(service string, v interface{}) {
 	c.Lock()
 	defer c.Unlock()
@@ -742,7 +743,7 @@ func (c *Client) _run() error {
 	return nil
 }
 
-// Run ...
+// Run starts a RPC/event server. This is a blocking call.
 func (c *Client) Run() error {
 	var err error
 	retry := c.retryCount
