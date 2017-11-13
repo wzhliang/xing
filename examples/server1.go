@@ -6,21 +6,24 @@ import (
 
 	"context"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"github.com/wzhliang/xing"
 	"github.com/wzhliang/xing/examples/hello"
 )
 
-func err_assert(err error) {
+func errAssert(err error) {
 	if err != nil {
-		log.Fatalln(err)
+		log.Error().Err(err).Msg("...")
+		panic(err)
 	}
 }
 
+// Greeter ...
 type Greeter struct{}
 
+// Hello ...
 func (g *Greeter) Hello(ctx context.Context, req *hello.HelloRequest, rsp *hello.HelloResponse) error {
-	fmt.Printf(" [*] name: %s\n", req.Name)
+	log.Info().Str("name", req.Name).Msg("Hello")
 	if req.Name == "鸠摩智" {
 		(*rsp).Greeting = "yo"
 	} else {
@@ -29,8 +32,9 @@ func (g *Greeter) Hello(ctx context.Context, req *hello.HelloRequest, rsp *hello
 	return nil
 }
 
+// Nihao ...
 func (g *Greeter) Nihao(ctx context.Context, req *hello.HelloRequest, v *hello.Void) error {
-	fmt.Printf(" [*] name: %s\n", req.Name)
+	log.Info().Str("name", req.Name).Msg("Nihao")
 	return nil
 }
 
@@ -44,7 +48,7 @@ func main() {
 		mq,
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
-	err_assert(err)
+	errAssert(err)
 	if err != nil {
 		return
 	}

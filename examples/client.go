@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"strconv"
 	"time"
@@ -42,7 +41,7 @@ func main() {
 	cli := hello.NewGreeterClient("host.server", producer)
 	n, err := strconv.Atoi(os.Args[1])
 	if err != nil {
-		fmt.Printf("Wrong argument: %s", os.Args[1])
+		log.Error().Str("#", os.Args[1]).Msg("Wrong argument")
 	}
 
 	for i := 0; i < n; i++ {

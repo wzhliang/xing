@@ -1,19 +1,18 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"strconv"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"github.com/wzhliang/xing"
 	"github.com/wzhliang/xing/examples/hello"
 )
 
 func _assert(err error) {
 	if err != nil {
-		log.Errorf("Client: %v", err)
+		log.Error().Err(err).Msg("Client")
 	}
 }
 
@@ -32,7 +31,7 @@ func main() {
 	}
 	n, err := strconv.Atoi(os.Args[1])
 	if err != nil {
-		fmt.Printf("Wrong argument: %s", os.Args[1])
+		log.Error().Str("#", os.Args[1]).Msg("Wrong argument")
 	}
 	for i := 0; i < n; i++ {
 		err = producer.Notify("ingress.foobar", "Greeter::Nihao", &hello.HelloRequest{Name: "Jack"})

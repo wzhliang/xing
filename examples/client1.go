@@ -7,20 +7,20 @@ import (
 	"strconv"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"github.com/wzhliang/xing"
 	"github.com/wzhliang/xing/examples/hello"
 )
 
 func _assert(err error) {
 	if err != nil {
-		log.Errorf("Client: %v", err)
+		log.Error().Err(err).Msg("Client")
 	}
 }
 
 func _assertReturn(req, resp string) {
 	if req != resp {
-		log.Errorf("Client: %s != %s", req, resp)
+		log.Error().Str("req", req).Str("resp", resp).Msg("Client")
 	}
 }
 
@@ -31,18 +31,18 @@ func main() {
 		mq = url
 	}
 	producer, err := xing.NewClient("game.controller", mq,
-		xing.SetIdentifier(&xing.NoneIdentifier{}),
+		xing.SetIdentifier(&xing.RandomIdentifier{}),
 		xing.SetSerializer(&xing.JSONSerializer{}),
 	)
 	if err != nil {
-		log.Errorf("failed to create new client")
+		log.Error().Msg("failed to create new client")
 	}
 	target := fmt.Sprintf("game.agent.%s", "xyz")
 	cli := hello.NewGreeterClient(target, producer)
 
 	n, err := strconv.Atoi(os.Args[1])
 	if err != nil {
-		fmt.Printf("Wrong argument: %s", os.Args[2])
+		log.Error().Str("#", os.Args[2]).Msg("Wrong argument")
 	}
 
 	for i := 0; i < n; i++ {
