@@ -777,6 +777,10 @@ func topicLength(name string) int {
 }
 
 func init() {
-	log.Logger = log.Level(zerolog.WarnLevel).
-		Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	if os.Getenv("XING_TRACE_ON") == "1" {
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	} else {
+		log.Logger = log.Level(zerolog.WarnLevel).
+			Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	}
 }

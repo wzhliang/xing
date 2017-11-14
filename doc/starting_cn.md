@@ -64,3 +64,8 @@ topic是控制信息流动的机制。在xing里面，topic被定义为
 来注册该服务。系统会规律的调用health checker并决定是否注册。
 
 参见 `examples/register.go`
+
+
+# Debug
+* 缺省xing仅仅打印WARN, ERROR级别的日志，如果需要打开全日志，需要定义一个环境变量
+* `export XING_TRACE_ON=1`
