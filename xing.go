@@ -777,5 +777,6 @@ func topicLength(name string) int {
 }
 
 func init() {
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	log.Logger = log.Level(zerolog.WarnLevel).
+		Output(zerolog.ConsoleWriter{Out: os.Stderr})
 }
