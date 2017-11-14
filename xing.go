@@ -224,7 +224,7 @@ func (c *Client) _send(ex string, key string, corrid string, typ string, payload
 		Body:          []byte(pl),
 	}
 
-	err = c.newSendChannel()
+	_, err = c.ensureConnection()
 	if err != nil {
 		return err
 	}
@@ -261,35 +261,46 @@ func (c *Client) Notify(target string, event string, payload interface{}) error 
 	return c.send(target, Event, event, payload)
 }
 
-func (c *Client) newSendChannel() error {
-	err := c.setup()
+// ensureConnection makes sure TCP connection is available
+func (c *Client) ensureConnection() (bool, error) {
+	if c.conn != nil {
+		return true, nil
+	}
+	conn, err := c.connect()
 	if err != nil {
-		return err
+		log.Error().Msgf("connection failed: %v", err)
+		c.conn = nil
+		return false, err
 	}
-	if c.sch != nil {
-		return nil
-	}
-	c.sch.Close()
+	log.Info().Str("addr", conn.LocalAddr().String()).Msg("new TCP connection")
+	c.Lock()
+	c.conn = conn
+	c.Unlock()
+	go c.watch()
+
+	// send channel is bound to the connection
 	ch, err := c.conn.Channel()
+	if err != nil {
+		return false, err
+	}
 	c.Lock()
 	c.sch = ch
 	c.Unlock()
-	if err != nil {
-		return err
-	}
-	return nil
+	return false, nil
 }
 
 func (c *Client) newChannel() error {
-	err := c.setup()
+	old, err := c.ensureConnection()
 	if err != nil {
 		return err
 	}
-	ch, err := c.conn.Channel()
-	c.Lock()
-	if c.ch != nil {
+
+	// new consume channel is always created
+	if old && c.ch != nil {
 		c.ch.Close()
 	}
+	ch, err := c.conn.Channel()
+	c.Lock()
 	c.ch = ch
 	c.Unlock()
 	if err != nil {
@@ -315,7 +326,7 @@ func (c *Client) Call(ctx context.Context, target string, method string, payload
 				c.queue.Name, // queue
 				"",           // consumer
 				true,         // autoack
-				c.single,     // exclusive
+				true,         // exclusive
 				false,        // noLocal
 				false,        // noWait
 				nil,
@@ -348,7 +359,7 @@ func (c *Client) Call(ctx context.Context, target string, method string, payload
 	case msg := <-msgCh:
 		return c.toResult(&msg)
 	case err := <-errCh:
-		log.Error().Str("method", method).Err(err).Msg("Operation failed")
+		log.Error().Str("method", method).Err(err).Msg("Failed to send request")
 		return "", nil, err
 	case <-ctx.Done():
 		err := fmt.Errorf("RPC timeout: %s", method)
@@ -421,6 +432,7 @@ func (c *Client) setup() error {
 		log.Error().Msgf("connection failed: %v", err)
 		return err
 	}
+	log.Info().Str("addr", conn.LocalAddr().String()).Msg("local")
 	c.Lock()
 	c.conn = conn
 	c.Unlock()
