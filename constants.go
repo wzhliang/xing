@@ -21,7 +21,7 @@ const (
 
 	// Defaults
 	RPCTTL         = int64(1)
-	EVTTTL         = int64(15 * 60 * 1000)     // 10 minutes
+	EVTTTL         = int64(15 * 60 * 1000)     // 15 minutes
 	ResultQueueTTL = int64(10 * 60 * 1000)     // 10 minutes
 	QueueTTL       = int64(3 * 60 * 60 * 1000) // 3 hours
 
