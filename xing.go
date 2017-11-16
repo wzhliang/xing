@@ -347,6 +347,7 @@ func (c *Client) Call(ctx context.Context, target string, method string, payload
 					msgCh <- m
 					return
 				}
+				log.Warn().Str("corrid", m.CorrelationId).Msg("It looks like you're using multiple thread to access a single channel.")
 			}
 		}
 	}()
@@ -362,6 +363,7 @@ func (c *Client) Call(ctx context.Context, target string, method string, payload
 		log.Error().Str("method", method).Err(err).Msg("Failed to send request")
 		return "", nil, err
 	case <-ctx.Done():
+		log.Error().Str("method", method).Msg("RPC timeout")
 		err := fmt.Errorf("RPC timeout: %s", method)
 		return "", nil, err
 	}
