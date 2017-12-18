@@ -154,11 +154,21 @@ func (c *Client) corrid() string {
 }
 
 func (c *Client) isConsumer() bool {
-	return c.typ == ServiceClient || c.typ == EventHandlerClient
+	return c.typ == ServiceClient ||
+		c.typ == EventHandlerClient ||
+		c.typ == StreamHandlerClient
 }
 
 func (c *Client) isService() bool {
 	return c.typ == ServiceClient
+}
+
+func (c *Client) isEventHandler() bool {
+	return c.typ == EventHandlerClient
+}
+
+func (c *Client) isStreamHandler() bool {
+	return c.typ == StreamHandlerClient
 }
 
 // Register starts periodic registration to a database such as etcd or consul.
@@ -532,6 +542,17 @@ func (c *Client) setupClient() error {
 	return nil
 }
 
+func (c *Client) setupConsumer() error {
+	if c.isService() {
+		return c.setupService()
+	} else if c.isEventHandler() {
+		return c.setupEventHandler()
+	} else if c.isStreamHandler() {
+		return c.setupStreamHandler()
+	}
+	panic("Unknown consumer type")
+}
+
 func (c *Client) setupService() error {
 	if c.conn != nil {
 		return nil
@@ -590,6 +611,43 @@ func (c *Client) setupEventHandler() error {
 	if err != nil {
 		return err
 	}
+	for _, key := range c.interests {
+		log.Info().Str("queue", c.queue.Name).Str("exchange", EventExchange).Str("key", key).Msg("Subscribing")
+		err = c.ch.QueueBind(c.queue.Name, key, EventExchange, false, nil)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) setupStreamHandler() error {
+	err := c.setup()
+	if err != nil {
+		return err
+	}
+	var name string
+	if c.single {
+		name = c.name
+	} else {
+		name = c.service()
+	}
+	qn := fmt.Sprintf("xing.S.stm-%s", name)
+	c.queue, err = c.ch.QueueDeclare(
+		qn,    // name
+		true,  // durable
+		false, // autoDelete
+		false, // exclusive
+		false, // noWait
+		amqp.Table{
+			"x-expires":     QueueTTL,
+			"x-message-ttl": STRMTTL,
+		}, // args
+	)
+	if err != nil {
+		return err
+	}
+	c.interests = append(c.interests, fmt.Sprintf("%s.#", c.service())) // auto sub
 	for _, key := range c.interests {
 		log.Info().Str("queue", c.queue.Name).Str("exchange", EventExchange).Str("key", key).Msg("Subscribing")
 		err = c.ch.QueueBind(c.queue.Name, key, EventExchange, false, nil)
@@ -678,6 +736,28 @@ func NewEventHandler(name string, url string, opts ...ClientOpt) (*Client, error
 	return c, err
 }
 
+// NewStreamHandler creates a new data stream handler.
+func NewStreamHandler(name string, url string, opts ...ClientOpt) (*Client, error) {
+	c, err := bootStrap(name, url, opts...)
+	if err != nil {
+		return nil, err
+	}
+	c.typ = StreamHandlerClient
+	// Same queue for all services - load balancing
+	if topicLength(name) != 2 && topicLength(name) != 3 {
+		return nil, fmt.Errorf("Invalid name for stream handler: %s", name)
+	}
+	if topicLength(name) == 2 {
+		c.single = false
+	}
+	err = c.setupStreamHandler()
+	if err != nil {
+		return nil, err
+	}
+
+	return c, err
+}
+
 // NewHandler registers handler of protocol. Called from generated code.
 func (c *Client) NewHandler(service string, v interface{}) {
 	c.Lock()
@@ -694,12 +774,7 @@ func (c *Client) _run() error {
 	if !c.isConsumer() {
 		panic("only consumer can start a server")
 	}
-	var err error
-	if c.isService() {
-		err = c.setupService()
-	} else {
-		err = c.setupEventHandler()
-	}
+	err := c.setupConsumer()
 	if err != nil {
 		return fmt.Errorf("unable to connect to server")
 	}
