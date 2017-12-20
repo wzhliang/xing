@@ -770,7 +770,7 @@ func (c *Client) NewHandler(service string, v interface{}) {
 }
 
 // Run Only valid for service or event handler
-func (c *Client) _run() error {
+func (c *Client) _run(ctx context.Context) error {
 	if !c.isConsumer() {
 		panic("only consumer can start a server")
 	}
@@ -810,7 +810,7 @@ func (c *Client) _run() error {
 		resp := reflect.New(c.outputs[utype])
 		params := make([]reflect.Value, 0)
 		params = append(params, reflect.ValueOf(c.svc[getService(utype)])) // this pointer
-		params = append(params, reflect.ValueOf(context.Background()))
+		params = append(params, reflect.ValueOf(ctx))
 		params = append(params, m)
 		params = append(params, resp)
 		ret := c.handlers[utype].Call(params)
@@ -833,12 +833,12 @@ func (c *Client) _run() error {
 }
 
 // Run starts a RPC/event server. This is a blocking call.
-func (c *Client) Run() error {
+func (c *Client) Run(ctx context.Context) error {
 	var err error
 	retry := c.retryCount
 	for retry > 0 {
 		log.Info().Msg("starting server...")
-		err = c._run()
+		err = c._run(ctx)
 		if err == nil {
 			retry = c.retryCount
 		} else {

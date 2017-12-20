@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"time"
 
 	"context"
 
@@ -22,10 +23,16 @@ func _assert(err error) {
 // Greeter ...
 type Greeter struct{}
 
+// Key ...
+type Key string
+
+var key Key = "transport"
+
 // Hello ...
 func (g *Greeter) Hello(ctx context.Context, req *hello.HelloRequest, rsp *hello.HelloResponse) error {
 	log.Info().Str("name", req.Name).Msg("Hello")
 	rsp.Greeting = "Ciao"
+	log.Info().Str("context", ctx.Value(key).(string)).Msg("XXX")
 	counter++
 	log.Info().Int("counter", counter).Msg("Hello")
 	return nil
@@ -34,6 +41,7 @@ func (g *Greeter) Hello(ctx context.Context, req *hello.HelloRequest, rsp *hello
 // Nihao ...
 func (g *Greeter) Nihao(ctx context.Context, req *hello.HelloRequest, v *hello.Void) error {
 	log.Info().Str("name", req.Name).Msg("Nihao")
+	log.Info().Str("context", ctx.Value(key).(string)).Msg("XXX")
 	counter++
 	log.Info().Int("counter", counter).Msg("Hello")
 	return nil
@@ -52,6 +60,13 @@ func main() {
 
 	hello.RegisterGreeterHandler(consumer, &Greeter{})
 
-	log.Info().Msg(" [*] Waiting for messages. To exit press CTRL+C")
-	consumer.Run()
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(10 * time.Second)
+		cancel()
+	}()
+	log.Info().Msg(" [*] Should stop in 10 seconds")
+	ctx = context.WithValue(ctx, key, "RMQ")
+	ret := consumer.Run(ctx)
+	log.Info().Err(ret).Msg("")
 }
