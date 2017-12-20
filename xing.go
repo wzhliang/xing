@@ -769,14 +769,52 @@ func (c *Client) NewHandler(service string, v interface{}) {
 	}
 }
 
+func (c *Client) handleMessage(ctx context.Context, d amqp.Delivery) error {
+	utype := c.userType(d.RoutingKey)
+	if c.inputs[utype] == nil {
+		log.Info().Str("method", utype).Msg("Unknown method")
+		return nil
+	}
+	log.Info().Str("method", utype).Msg("Handling")
+	m := reflect.New(c.inputs[utype])
+	err := c.serializer.Unmarshal(d.Body, m.Interface())
+	if err != nil {
+		log.Error().Bytes("msg", d.Body).Err(err).Msg("Unable to unmarshal message")
+		return nil
+	}
+	// I know the signature
+	resp := reflect.New(c.outputs[utype])
+	params := make([]reflect.Value, 0)
+	params = append(params, reflect.ValueOf(c.svc[getService(utype)])) // this pointer
+	params = append(params, reflect.ValueOf(ctx))
+	params = append(params, m)
+	params = append(params, resp)
+	ret := c.handlers[utype].Call(params)
+	if !ret[0].IsNil() {
+		log.Error().Str("method", utype).Msg("RPC failed")
+		// FIXME: return error
+	}
+	if !c.isService() || c.outputs[utype].Name() == "Void" { // magic Void
+		log.Info().Msg("No response required.")
+	} else {
+		err = c.Respond(d, utype, resp.Interface())
+		if err != nil {
+			log.Error().Err(err).Msg("Unable to send response")
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Run Only valid for service or event handler
-func (c *Client) _run(ctx context.Context) error {
+func (c *Client) _run(ctx context.Context) (bool, error) {
 	if !c.isConsumer() {
 		panic("only consumer can start a server")
 	}
 	err := c.setupConsumer()
 	if err != nil {
-		return fmt.Errorf("unable to connect to server")
+		return false, fmt.Errorf("unable to connect to server")
 	}
 	log.Info().Str("type", c.typ).Msg("server")
 	msgs, err := c.ch.Consume(
@@ -790,55 +828,41 @@ func (c *Client) _run(ctx context.Context) error {
 	)
 	if err != nil {
 		log.Error().Msgf("consume failed: %v", err)
-		return err
+		return false, err
 	}
 
-	for d := range msgs {
-		utype := c.userType(d.RoutingKey)
-		if c.inputs[utype] == nil {
-			log.Info().Str("method", utype).Msg("Unknown method")
-			continue
-		}
-		log.Info().Str("method", utype).Msg("Handling")
-		m := reflect.New(c.inputs[utype])
-		err := c.serializer.Unmarshal(d.Body, m.Interface())
-		if err != nil {
-			log.Error().Bytes("msg", d.Body).Err(err).Msg("Unable to unmarshal message")
-			continue
-		}
-		// I know the signature
-		resp := reflect.New(c.outputs[utype])
-		params := make([]reflect.Value, 0)
-		params = append(params, reflect.ValueOf(c.svc[getService(utype)])) // this pointer
-		params = append(params, reflect.ValueOf(ctx))
-		params = append(params, m)
-		params = append(params, resp)
-		ret := c.handlers[utype].Call(params)
-		if !ret[0].IsNil() {
-			log.Error().Str("method", utype).Msg("RPC failed")
-			// FIXME: return error
-		}
-		if !c.isService() || c.outputs[utype].Name() == "Void" { // magic Void
-			log.Info().Msg("No response required.")
-		} else {
-			err = c.Respond(d, utype, resp.Interface())
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().Msg("somebody is stoppping me")
+			return true, nil
+		case d, ok := <-msgs:
+			if !ok {
+				return false, fmt.Errorf("channel closed")
+			}
+			err = c.handleMessage(ctx, d)
 			if err != nil {
-				log.Error().Err(err).Msg("Unable to send response")
-				return err
+				return false, err
 			}
 		}
 	}
-
-	return nil
 }
 
-// Run starts a RPC/event server. This is a blocking call.
-func (c *Client) Run(ctx context.Context) error {
+// Run starts a server with default context
+func (c *Client) Run() error {
+	return c.RunWithContext(context.Background())
+}
+
+// RunWithContext starts a RPC/event server. This is a blocking call.
+func (c *Client) RunWithContext(ctx context.Context) error {
 	var err error
 	retry := c.retryCount
 	for retry > 0 {
 		log.Info().Msg("starting server...")
-		err = c._run(ctx)
+		stop, err := c._run(ctx)
+		if stop {
+			return nil
+		}
 		if err == nil {
 			retry = c.retryCount
 		} else {

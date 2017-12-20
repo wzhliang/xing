@@ -62,11 +62,11 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		time.Sleep(10 * time.Second)
+		time.Sleep(100 * time.Second)
 		cancel()
 	}()
-	log.Info().Msg(" [*] Should stop in 10 seconds")
+	log.Info().Msg(" [*] Should stop in 100 seconds")
 	ctx = context.WithValue(ctx, key, "RMQ")
-	ret := consumer.Run(ctx)
-	log.Info().Err(ret).Msg("")
+	ret := consumer.RunWithContext(ctx)
+	log.Info().Err(ret).Msg("Run() returned")
 }
