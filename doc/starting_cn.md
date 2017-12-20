@@ -1,12 +1,12 @@
 # 准备
-0. 需要安装protobuf compiler - protoc 和一个针对本项目的compiler plugin
-0. 下载安装protoc:
+1. 需要安装protobuf compiler - protoc 和一个针对本项目的compiler plugin
+1. 从下面两个地方之一下载并安装protoc:
     * [github.com/google/protobuf/releases](https://github.com/google/protobuf/releases)
     * [gitee mirror (incomplete)](https://gitee.com/wisecloud/protobuf/attach_files)
-0. `go get github.com/google/protobuf`
-    * 为编译protobuf做准备
-0. `go get github.com/wzhliang/protobuf`
-0. `cd $GOPATH/src/github.com/wzhliang/protobuf && make`
+1. 安装compiler plugin
+    1. `go get github.com/google/protobuf`
+    1. `go get github.com/wzhliang/protobuf`
+    1. `cd $GOPATH/src/github.com/wzhliang/protobuf && make`
 
 
 # protobuf
@@ -17,18 +17,6 @@
 * 编写protocol真正的实现
 * 如果需要无返回的RPC，可以使用特定的`Void`返回message。
     * `.proto` 文件里面需要有定义改message
-
-
-# Topic
-topic是控制信息流动的机制。在xing里面，topic被定义为
-
-    domain.service.instance.x.x
-
-也就是五段。最后两段是内部使用的，用户可以不关心。基本规则如小儿：
-
-0. 同一个微服务，`domain.service`应该相同。
-0. event handler缺省会关心本domain的所有信息。但同时可以调用`SetInterests()`来接收
-   其它的信息
 
 
 # Use cases
@@ -53,6 +41,28 @@ topic是控制信息流动的机制。在xing里面，topic被定义为
 * `cli := NewClient()`
 * `cli.Notify()`
 * 参见 `examples/{evt-server, notify}.go`
+
+## 自定义context
+缺省情况下，所有handler的调用都会使用`context.Background()`作为上下文。如果需要指定上下文，需要用`RunWithContext()`这个函数
+这样做有两个用途：
+0. 使用`context.WithValue()`给handler传自定义的参数。
+1. 使用`context.WithCancel()`控制server的生命周期。
+
+
+# Topic
+topic是控制信息流动的机制。在xing里面，topic被定义为
+
+    domain.service.instance.x.x
+
+也就是五段。最后两段是内部使用的，用户可以不关心。前三段的基本规则如下：
+
+1. 同一个微服务，`domain.service`应该相同。
+1. stream handler缺省会关心本服务的所有信息。但同时可以调用`SetInterests()`来接收
+   其它的信息
+1. event handerl缺省对任何topic都没有interest。
+
+一个消息是“单播”，还是“广播”的方式发送给一个consumer(service, event handler, 和stream handler)是跟第一次声明该consumer时所指定的名字有关的。
+如果名字是两段，那么接受的方式就是共享的，所有实例会以先到先得的方式接受请求。如果是三段，那么每个实例会各自收到一份请求的副本。
 
 
 # 服务注册
