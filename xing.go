@@ -647,7 +647,7 @@ func (c *Client) setupStreamHandler() error {
 	if err != nil {
 		return err
 	}
-	c.interests = append(c.interests, fmt.Sprintf("%s.#", c.service())) // auto sub
+	c.interests = append(c.interests, fmt.Sprintf("%s.#", name)) // auto sub
 	for _, key := range c.interests {
 		log.Info().Str("queue", c.queue.Name).Str("exchange", EventExchange).Str("key", key).Msg("Subscribing")
 		err = c.ch.QueueBind(c.queue.Name, key, EventExchange, false, nil)
