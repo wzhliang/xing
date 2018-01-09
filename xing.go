@@ -740,7 +740,6 @@ func (c *Client) handleMessage(ctx context.Context, d amqp.Delivery) error {
 	ret := c.handlers[utype].Call(params)
 	if !ret[0].IsNil() {
 		log.Error().Str("method", utype).Msg("RPC failed")
-		// FIXME: return error
 	}
 	if !c.isService() || c.outputs[utype].Name() == "Void" { // magic Void
 		log.Info().Msg("No response required.")
