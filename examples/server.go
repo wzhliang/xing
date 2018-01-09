@@ -47,7 +47,7 @@ func main() {
 	svc, err := xing.NewService("host.server",
 		mq,
 		xing.SetSerializer(&xing.JSONSerializer{}),
-		xing.SetBrokerTimeout(15, 5),
+		xing.SetBrokerTimeout(15000, 5),
 	)
 	_assert(err)
 

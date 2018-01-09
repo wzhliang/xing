@@ -1,7 +1,7 @@
 #!/bin/bash
 REPO=hub.c.163.com/borlandc/xing
 SERVERS="server server1 evt-server strm-consumer"
-CLIENTS="client client1 notify noreply strm-producer"
+CLIENTS="client client1 notify noreply strm-producer multi-client"
 
 for s in $SERVERS; do
 	GOOS=linux GOARCH=amd64 go build $s.go

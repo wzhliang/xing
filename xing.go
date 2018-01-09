@@ -13,7 +13,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/streadway/amqp"
-	"github.com/wzhliang/xing/utils"
+	worker "github.com/wzhliang/xing/pkg/worker"
 )
 
 // Rules:
@@ -92,17 +92,19 @@ func resultTopicName(who string) string {
 // Client is a wrapper struct for amqp client.
 type Client struct {
 	sync.Mutex
+	wg            sync.WaitGroup
 	name          string
 	url           string
 	conn          *amqp.Connection
-	ch            *amqp.Channel // incoming channel
-	sch           *amqp.Channel // outgoing channel
-	queue         amqp.Queue    // queue for consumption, for RPC client, it holds results
 	tlsConfig     *tls.Config
 	serializer    Serializer
 	identifier    Identifier
-	rpcCounter    uint
 	interests     []string
+	workers       [NWorker]*Worker // workers for producer
+	ch            *amqp.Channel    // for consumer
+	sch           *amqp.Channel
+	queue         amqp.Queue
+	pool          worker.Dispatcher
 	typ           string
 	handlers      map[string]reflect.Value // key is service::command
 	inputs        map[string]reflect.Type
@@ -147,10 +149,6 @@ func (c *Client) respTo(topic string) string {
 
 func (c *Client) instance() string {
 	return strings.Split(c.name, ".")[2]
-}
-
-func (c *Client) corrid() string {
-	return fmt.Sprintf("rpc-%s-%d", c.name, c.rpcCounter)
 }
 
 func (c *Client) isConsumer() bool {
@@ -212,9 +210,8 @@ func (c *Client) Register(address string, port int, tags map[string]string, ttl 
 	return nil
 }
 
-func (c *Client) toResult(d *amqp.Delivery) (typ string, v interface{}, err error) {
-	typ = c.respTo(d.RoutingKey)
-	log.Info().Str("type", typ).Msgf("response %v", c.outputs[typ])
+func (c *Client) toResult(d *amqp.Delivery) (v interface{}, err error) {
+	typ := c.respTo(d.RoutingKey)
 	v = reflect.New(c.outputs[typ]).Interface()
 	err = c.serializer.Unmarshal(d.Body, v)
 	return
@@ -243,16 +240,13 @@ func (c *Client) _send(ex string, key string, corrid string, typ string, payload
 	return c.sch.Publish(ex, key, false, false, msg)
 }
 
+// this should only be called for non-RPC payload
 func (c *Client) send(target string, _type string, event string, payload interface{}) error {
 	var cor string
 	if _type == Command {
-		c.Lock()
-		c.rpcCounter++
-		c.Unlock()
-		cor = c.corrid()
-	} else {
-		cor = "N/A"
+		panic("RPC is not supposed to use this function")
 	}
+	cor = "N/A"
 
 	ex := c.exchange(_type)
 	var key string
@@ -272,13 +266,13 @@ func (c *Client) Notify(target string, event string, payload interface{}) error 
 }
 
 // ensureConnection makes sure TCP connection is available
+// return true if no new connection is made
 func (c *Client) ensureConnection() (bool, error) {
 	if c.conn != nil {
 		return true, nil
 	}
 	conn, err := c.connect()
 	if err != nil {
-		log.Error().Msgf("connection failed: %v", err)
 		c.conn = nil
 		return false, err
 	}
@@ -321,68 +315,30 @@ func (c *Client) newChannel() error {
 
 // Call invokes an remote method. Should not be called externally.
 func (c *Client) Call(ctx context.Context, target string, method string, payload interface{}, sync bool) (string, interface{}, error) {
-	errCh := make(chan error, 1)
-	msgCh := make(chan amqp.Delivery, 1)
-	go func() {
-		var err error
-		var msgs <-chan amqp.Delivery
-		if sync {
-			err = c.newChannel()
-			if err != nil {
-				errCh <- err
-				return
-			}
-			msgs, err = c.ch.Consume(
-				c.queue.Name, // queue
-				"",           // consumer
-				true,         // autoack
-				true,         // exclusive
-				false,        // noLocal
-				false,        // noWait
-				nil,
-			)
-			if err != nil {
-				errCh <- err
-				return
-			}
-		}
-		err = c.send(target, Command, method, payload)
-		if err != nil {
-			errCh <- err
-			return
-		}
-		if sync {
-			for m := range msgs {
-				if c.corrid() == m.CorrelationId {
-					msgCh <- m
-					return
-				}
-				log.Warn().Str("corrid", m.CorrelationId).Msg("It looks like you're using multiple thread to access a single channel.")
-			}
-		}
-	}()
-
-	if !sync {
-		return "", nil, nil
+	req := Request{
+		ctx:     ctx,
+		target:  target,
+		method:  method,
+		payload: payload,
 	}
-
-	select {
-	case msg := <-msgCh:
-		return c.toResult(&msg)
-	case err := <-errCh:
-		log.Error().Str("method", method).Err(err).Msg("Failed to send request")
-		return "", nil, err
-	case <-ctx.Done():
-		log.Error().Str("method", method).Msg("RPC timeout")
-		err := fmt.Errorf("RPC timeout: %s", method)
-		return "", nil, err
-	}
+	ret, err := c.pool.Send(req)
+	return "", ret, err
 }
 
 // Respond called by RPC server. Should not be called externally.
 func (c *Client) Respond(delivery amqp.Delivery, command string, payload interface{}) error {
 	key := fmt.Sprintf("%s.%s.%s", delivery.ReplyTo, Result, command)
 	return c._send(delivery.Exchange, key, delivery.CorrelationId, command, payload)
+}
+
+func (c *Client) closePool() {
+	c.pool.Close()
+	log.Info().Msg("stopping worker...")
+	c.wg.Wait()
+	log.Info().Msg("closing workers...")
+	for _, w := range c.workers {
+		w.Close()
+	}
 }
 
 // Close shuts down a client or server.
@@ -392,10 +348,14 @@ func (c *Client) Close() {
 		return
 	}
 	c.stopWatch()
-	if c.ch != nil {
-		_, err := c.ch.QueueDelete(c.queue.Name, false, false, false)
-		if err != nil {
-			log.Warn().Err(err).Msg("Error deleting queue")
+	if c.typ == ProducerClient {
+		c.closePool()
+	} else {
+		if c.ch != nil {
+			_, err := c.ch.QueueDelete(c.queue.Name, false, false, false)
+			if err != nil {
+				log.Warn().Err(err).Msg("Error deleting queue")
+			}
 		}
 	}
 	c.conn.Close()
@@ -515,29 +475,18 @@ func (c *Client) setupClient() error {
 		log.Error().Err(err).Msg("setup failed")
 		return err
 	}
-	qn := fmt.Sprintf("xing.C.%s.result", c.name)
-	c.queue, err = c.ch.QueueDeclare(
-		qn,    // name
-		true,  // durable
-		false, // autoDelete
-		false, // exclusive
-		false, // noWait
-		amqp.Table{
-			"x-expires":     ResultQueueTTL,
-			"x-message-ttl": RPCTTL,
-		}, // args
-	)
-	if err != nil {
-		log.Error().Err(err).Msg("setup failed")
-		return err
+	c.pool = worker.NewDispatcher(PoolSize)
+	if c.pool == nil {
+		return fmt.Errorf("creating pool failed")
 	}
-	key := resultTopicName(c.name)
-	log.Info().Str("queue", c.queue.Name).Str("exchange", RPCExchange).Str("key", key).
-		Msg("Subscribing")
-	err = c.ch.QueueBind(c.queue.Name, key, RPCExchange, false, nil)
-	if err != nil {
-		log.Error().Err(err).Msg("setup failed")
-		return err
+	for i := 0; i < NWorker; i++ {
+		// ideally not the whole client is passed in
+		c.workers[i] = newWorker(c.conn, c, i+1)
+		if c.workers[i] == nil {
+			return fmt.Errorf("failed to creat worker")
+		}
+		c.wg.Add(1)
+		c.pool.AddWorker(c.workers[i])
 	}
 	return nil
 }
@@ -669,7 +618,6 @@ func bootStrap(name string, url string, opts ...ClientOpt) (*Client, error) {
 		watchStop:     make(chan bool),
 		retryCount:    30,
 		retryInterval: 1,
-		rpcCounter:    uint(utils.Random(1000, 9999)),
 		single:        true,
 	}
 	// handle options

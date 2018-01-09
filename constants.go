@@ -29,4 +29,8 @@ const (
 
 	// Threshold
 	MinHeatbeat = 3
+
+	// Threading
+	PoolSize = 1000
+	NWorker  = 5
 )
