@@ -314,7 +314,7 @@ func (c *Client) newChannel() error {
 }
 
 // Call invokes an remote method. Should not be called externally.
-func (c *Client) Call(ctx context.Context, target string, method string, payload interface{}, sync bool) (string, interface{}, error) {
+func (c *Client) Call(ctx context.Context, target string, method string, payload interface{}, sync bool) (interface{}, error) {
 	req := Request{
 		ctx:     ctx,
 		target:  target,
@@ -322,7 +322,7 @@ func (c *Client) Call(ctx context.Context, target string, method string, payload
 		payload: payload,
 	}
 	ret, err := c.pool.Send(req)
-	return "", ret, err
+	return ret, err
 }
 
 // Respond called by RPC server. Should not be called externally.

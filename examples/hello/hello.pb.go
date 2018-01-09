@@ -107,7 +107,7 @@ func NewGreeterClient(serviceName string, c *client.Client) GreeterClient {
 }
 
 func (c *greeterClient) Hello(ctx context.Context, in *HelloRequest, opts ...client.CallOption) (*HelloResponse, error) {
-	_, out, err := c.c.Call(ctx, c.serviceName, "Greeter::Hello", in, true)
+	out, err := c.c.Call(ctx, c.serviceName, "Greeter::Hello", in, true)
 	if out == nil {
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func (c *greeterClient) Hello(ctx context.Context, in *HelloRequest, opts ...cli
 }
 
 func (c *greeterClient) Nihao(ctx context.Context, in *HelloRequest, opts ...client.CallOption) (*Void, error) {
-	_, _, err := c.c.Call(ctx, c.serviceName, "Greeter::Nihao", in, false)
+	_, err := c.c.Call(ctx, c.serviceName, "Greeter::Nihao", in, false)
 	return nil, err
 }
 
