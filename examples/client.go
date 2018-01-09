@@ -2,14 +2,19 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
 	"github.com/wzhliang/xing"
 	"github.com/wzhliang/xing/examples/hello"
 )
+
+var success = 0
+var m sync.Mutex
 
 func _assert(err error) {
 	if err != nil {
@@ -21,6 +26,7 @@ func _assertReturn(req, resp string) {
 	if req != resp {
 		log.Error().Msgf("Client: %s != %s", req, resp)
 	}
+	success++
 }
 
 func main() {
@@ -56,13 +62,6 @@ func main() {
 		cancel()
 
 		ctx, cancel = context.WithTimeout(context.Background(), 5000*time.Millisecond)
-		_, err = cli.Nihao(ctx, &hello.HelloRequest{
-			Name: "虚竹",
-		})
-		_assert(err)
-		cancel()
-
-		ctx, cancel = context.WithTimeout(context.Background(), 5000*time.Millisecond)
 		ret, err = cli.Hello(ctx, &hello.HelloRequest{
 			Name: "王语嫣",
 		})
@@ -81,8 +80,12 @@ func main() {
 			_assertReturn("陛下好", ret.Greeting)
 		}
 		cancel()
-
-		time.Sleep(1 * time.Second)
+		time.Sleep(1 * time.Millisecond)
+	}
+	fmt.Printf("success=%d\n", success)
+	if success != n*3 {
+		fmt.Printf("test failed")
 	}
 
+	producer.Close()
 }
