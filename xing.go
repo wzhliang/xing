@@ -231,7 +231,7 @@ func (c *Client) _send(ex string, key string, corrid string, typ string, payload
 		Body:          []byte(pl),
 	}
 
-	_, err = c.ensureConnection()
+	err = c.setup()
 	if err != nil {
 		return err
 	}

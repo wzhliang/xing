@@ -114,6 +114,18 @@ func (w *Worker) onConnect(conn *amqp.Connection) error {
 	if err != nil {
 		return nil
 	}
+	err = w.ch.ExchangeDeclare(
+		RPCExchange, // name
+		"topic",     // kind
+		true,        // durable
+		false,       // autodelete
+		false,       // internal
+		false,       // noWait
+		nil,
+	)
+	if err != nil {
+		return err
+	}
 	// I have to be a client
 	w.queue, err = w.ch.QueueDeclare(
 		fmt.Sprintf("%s-%02d", w.c.name, w.id), // name
