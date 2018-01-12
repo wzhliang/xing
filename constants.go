@@ -24,7 +24,7 @@ const (
 	RPCTTL         = int64(1)
 	EVTTTL         = int64(15 * 60 * 1000)     // 15 minutes
 	STRMTTL        = int64(60 * 1000)          // 1 minutes
-	ResultQueueTTL = int64(3 * 60 * 60 * 1000) // 10 minutes
+	ResultQueueTTL = int64(10 * 60 * 1000)     // 10 minutes
 	QueueTTL       = int64(3 * 60 * 60 * 1000) // 3 hours
 
 	// Threshold
