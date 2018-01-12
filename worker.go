@@ -82,6 +82,7 @@ func (w *Worker) Loop() {
 				continue
 			}
 		} else if w.c.conn != w.conn {
+			log.Info().Msg("new conection")
 			w.onConnect(w.c.conn)
 		}
 		ret(w.processJob(req))
@@ -94,14 +95,13 @@ func newWorker(conn *amqp.Connection, c *Client, id int) *Worker {
 	w := Worker{
 		id:         id,
 		c:          c,
-		conn:       conn,
+		conn:       nil,
 		rpcCounter: uint(utils.Random(1000, 9999)),
 	}
-	var err error
-	err = w.onConnect(conn)
-	if err != nil {
-		return nil
-	}
+	// onConnect() will be called on demand due to the fact that our own conn is
+	// different from Client's conn
+	// this makes sure that worker always has a consumer to its queue so that
+	// the queue will not be TTLed
 	return &w
 }
 
@@ -220,21 +220,11 @@ func (w *Worker) processJob(req wk.Request) (interface{}, error) {
 		var err error
 		var msgs <-chan amqp.Delivery
 		// receive
-		w.ch, err = w.newChannel()
-		if err != nil {
-			log.Error().Err(err).Msg("failed to create channel")
-			return nil, err
-		}
-		defer w.ch.Close()
-		err = w.ch.Qos(1, 0, false)
-		if err != nil {
-			log.Error().Err(err).Msg("failed to Qos")
-			return nil, err
-		}
 		// this has to be done before sending, otherwise it's too late
+		w.ch.Cancel(w.queue.Name, false)
 		msgs, err = w.ch.Consume(
 			w.queue.Name, // queue
-			"",           // consumer
+			w.queue.Name, // consumer
 			true,         // autoAck
 			true,         // exclusive
 			false,        // noLocal
