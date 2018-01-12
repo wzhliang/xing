@@ -18,7 +18,7 @@ type Worker struct {
 	ch         *amqp.Channel    // incoming channel
 	sch        *amqp.Channel    // outgoing channel
 	queue      amqp.Queue       // queue for consumption, for RPC client, it holds results
-	conn       *amqp.Connection // read only
+	conn       *amqp.Connection // own copy for detecting reconnection
 	d          wk.Dispatcher
 	c          *Client // the AMQP client
 	rpcCounter uint
@@ -81,6 +81,8 @@ func (w *Worker) Loop() {
 				ret(nil, fmt.Errorf("connection lost"))
 				continue
 			}
+		} else if w.c.conn != w.conn {
+			w.onConnect(w.c.conn)
 		}
 		ret(w.processJob(req))
 	}
@@ -106,6 +108,9 @@ func newWorker(conn *amqp.Connection, c *Client, id int) *Worker {
 func (w *Worker) onConnect(conn *amqp.Connection) error {
 	log.Info().Msg("connected")
 	var err error
+	w.Lock()
+	w.conn = conn // refreshing own copy
+	w.Unlock()
 	w.ch, err = conn.Channel()
 	if err != nil {
 		return nil
