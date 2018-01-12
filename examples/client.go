@@ -60,27 +60,7 @@ func main() {
 			_assertReturn("yo", ret.Greeting)
 		}
 		cancel()
-
-		ctx, cancel = context.WithTimeout(context.Background(), 5000*time.Millisecond)
-		ret, err = cli.Hello(ctx, &hello.HelloRequest{
-			Name: "王语嫣",
-		})
-		_assert(err)
-		if err == nil {
-			_assertReturn("美女好", ret.Greeting)
-		}
-		cancel()
-
-		ctx, cancel = context.WithTimeout(context.Background(), 5000*time.Millisecond)
-		ret, err = cli.Hello(ctx, &hello.HelloRequest{
-			Name: "段誉",
-		})
-		_assert(err)
-		if err == nil {
-			_assertReturn("陛下好", ret.Greeting)
-		}
-		cancel()
-		time.Sleep(1 * time.Millisecond)
+		time.Sleep(20 * time.Second)
 	}
 	fmt.Printf("success=%d\n", success)
 	if success != n*3 {
