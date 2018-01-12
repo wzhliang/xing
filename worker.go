@@ -133,6 +133,8 @@ func (w *Worker) onConnect(conn *amqp.Connection) error {
 	}
 	// I have to be a client
 	w.queue, err = w.ch.QueueDeclare(
+		// for client queue, we don't care it's name
+		// also, changing it will cause crash
 		fmt.Sprintf("%s-%02d", w.c.name, w.id), // name
 		true,  // durable
 		false, // autoDelete
