@@ -18,42 +18,41 @@ const (
 	queueTTL  = time.Duration(xing.QueueTTL) * time.Millisecond
 )
 
-var wg sync.WaitGroup
-var cancel context.CancelFunc
+type control struct {
+	wg     sync.WaitGroup
+	cancel context.CancelFunc
+}
+
+var c control
 
 func Test_Xing_01(t *testing.T) {
 	t.Log("TESTING SIMPLE HAPPY CASE...")
-	time.Sleep(2 * time.Second)
 	client1(t)
 }
 
 func Test_Xing_NoCall(t *testing.T) {
 	t.Log("TESTING NO CALL + LONG WAIT + CALL...")
-	time.Sleep(2 * time.Second)
 	clientNoCall(t, resultTTL)
 }
 
 func Test_Xing_NoCallServer(t *testing.T) {
 	t.Log("TESTING NO CALL + LOOOONG WAIT + CALL...")
-	time.Sleep(2 * time.Second)
 	clientNoCall(t, queueTTL)
 }
 
 func Test_Xing_OneCall(t *testing.T) {
 	t.Log("TESTING ONE CALL + LONG WAIT + CALL...")
-	time.Sleep(2 * time.Second)
 	clientOneCall(t, resultTTL)
 }
 
 func Test_Xing_OneCallServer(t *testing.T) {
 	t.Log("TESTING ONE CALL + LOOOONG WAIT + CALL...")
-	time.Sleep(2 * time.Second)
 	clientOneCall(t, queueTTL)
 }
 
 func Test_ShutDown(t *testing.T) {
-	cancel()
-	wg.Wait()
+	c.cancel()
+	c.wg.Wait()
 }
 
 func client1(t *testing.T) {
@@ -183,7 +182,7 @@ func (g *Greeter) Nihao(ctx context.Context, req *hello.HelloRequest, v *hello.V
 }
 
 func server(ctx context.Context, t *testing.T) {
-	defer wg.Done()
+	defer c.wg.Done()
 	mq := os.Getenv("RABBITMQ")
 	if mq == "" {
 		mq = "amqp://guest:guest@localhost:5672/"
@@ -203,9 +202,10 @@ func server(ctx context.Context, t *testing.T) {
 }
 
 func init() {
-	wg = sync.WaitGroup{}
+	c.wg = sync.WaitGroup{}
 	var ctx context.Context
-	ctx, cancel = context.WithCancel(context.Background())
-	wg.Add(1)
+	ctx, c.cancel = context.WithCancel(context.Background())
+	c.wg.Add(1)
 	go server(ctx, nil)
+	time.Sleep(2 * time.Second)
 }
