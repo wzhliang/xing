@@ -2,7 +2,6 @@ package xing
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -13,7 +12,6 @@ import (
 
 // Worker ...
 type Worker struct {
-	sync.Mutex
 	id         int
 	ch         *amqp.Channel    // incoming channel
 	sch        *amqp.Channel    // outgoing channel
@@ -108,9 +106,7 @@ func newWorker(conn *amqp.Connection, c *Client, id int) *Worker {
 func (w *Worker) onConnect(conn *amqp.Connection) error {
 	log.Info().Msg("connected")
 	var err error
-	w.Lock()
 	w.conn = conn // refreshing own copy
-	w.Unlock()
 	w.ch, err = conn.Channel()
 	if err != nil {
 		return nil
@@ -165,9 +161,7 @@ func (w *Worker) sendEx(target string, _type string, event string, replyTo strin
 	var cor string
 
 	if _type == Command { // FIXME: actuall worker should only handle Command
-		w.Lock()
 		w.rpcCounter++
-		w.Unlock()
 		cor = w.corrid()
 	} else {
 		cor = "N/A"
