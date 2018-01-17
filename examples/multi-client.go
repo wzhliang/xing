@@ -30,7 +30,7 @@ func _assertReturn(req, resp string) {
 }
 
 func call(cli hello.GreeterClient, req, resp string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 5000*time.Millisecond)
 	ret, err := cli.Hello(ctx, &hello.HelloRequest{
 		Name: req,
 	})
@@ -82,7 +82,6 @@ func main() {
 			defer wg.Done()
 			call(cli, "段誉", "陛下好")
 		}()
-		time.Sleep(1 * time.Second)
 	}
 	fmt.Printf("\n\n\n\nWaiting for goroutines to stop...\n\n\n\n")
 	wg.Wait()
