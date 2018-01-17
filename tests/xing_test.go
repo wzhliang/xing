@@ -143,7 +143,6 @@ func clientOneCall(t *testing.T, sleep time.Duration) {
 		t.Error("unexpected result")
 	}
 
-	t.Log("sleeping.......\n")
 	time.Sleep(sleep + 10*time.Second)
 
 	ctx, cancel = context.WithTimeout(context.Background(), 5000*time.Millisecond)
