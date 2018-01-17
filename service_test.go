@@ -6,6 +6,9 @@ import (
 	"time"
 )
 
+// Make sure you have consul server running.
+// e.g. docker run -d -p 8500:8500 consul
+
 func Test_Service_00(t *testing.T) {
 	name := "api.auth"
 	reg := NewConsulRegistrator()
