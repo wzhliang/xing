@@ -29,22 +29,7 @@ func (w *Worker) SetDispatcher(dis wk.Dispatcher) {
 
 // Close ... should be called after stopped
 func (w *Worker) Close() {
-	// at this time, the channel is already closed
-	var err error
-	if w.c.conn == nil {
-		log.Error().Msg("no connection to AMQP server. can't do much")
-		return
-	}
-	w.ch, err = w.conn.Channel()
-	if err != nil {
-		log.Error().Err(err).Msg("failed to create channel")
-		return
-	}
-
-	n, err := w.ch.QueueDelete(w.queue.Name, false, false, false)
-	if err != nil {
-		log.Error().Int("n", n).Err(err).Msg("failed to delete queue")
-	}
+	// queue gets automatically deleted anyway
 }
 
 func (w *Worker) corrid() string {
