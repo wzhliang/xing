@@ -79,3 +79,9 @@ topic是控制信息流动的机制。在xing里面，topic被定义为
 # Debug
 * 缺省xing仅仅打印WARN, ERROR级别的日志，如果需要打开全日志，需要定义一个环境变量
 * `export XING_TRACE_ON=1`
+
+
+# FAQ
+* 我的RPC timeout了!
+    * 请查看是否定义了没有返回值`Void`的RPC。避免这样的使用
+
