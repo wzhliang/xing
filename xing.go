@@ -517,10 +517,15 @@ func (c *Client) setupService() error {
 		name = c.service()
 	}
 	qn := fmt.Sprintf("xing.S.svc-%s", name)
+	// Persistenting queue cause reconnection problem with a load balanced
+	// cluster:
+	// when a server reconnects, it will (most likely) be connected to a
+	// different node the one that's died, declaring a durable queue will fail
+	// with 504 error
 	c.queue, err = c.ch.QueueDeclare(
 		qn,    // name
-		true,  // durable
-		false, // autoDelete
+		false, // durable
+		true,  // autoDelete
 		false, // exclusive
 		false, // noWait
 		amqp.Table{
