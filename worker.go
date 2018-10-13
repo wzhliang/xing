@@ -65,7 +65,7 @@ func (w *Worker) Loop() {
 				continue
 			}
 		} else if w.c.conn != w.conn {
-			log.Info().Msg("new conection")
+			log.Info().Msg("new connection")
 			w.onConnect(w.c.conn)
 		}
 		ret(w.processJob(req))
