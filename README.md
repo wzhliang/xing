@@ -5,7 +5,7 @@ Essentially, it is RabbitMQ + protobuf with some pre-defined rules on message to
 
 
 # Credit
-This started from an opioninated usage of the amqp library, as such, it took reference from the following fine projects, especially `cony`:
+This started from an opioninated usage of the amqp library, as such, it took references from the following fine projects, especially `cony`:
 
 * [cony](https://github.com/assembla/cony)
     * wrapper around ampq in declarative style
